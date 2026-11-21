@@ -1,0 +1,535 @@
+[
+ {
+  "id": "tabappsup0001",
+  "type": "tab",
+  "label": "app-supervision",
+  "disabled": false,
+  "info": "Fragment spécifique au déploiement supervision énergétique (spec supervision-energetique-spec-fonctionnelle.md). Deux chantiers : (1) proxy navigateur signé POST /app/query — spec fap-light C1.9 / D-8 / CA-S10, contrat spec front §9 ; (2) retour vers la FAP via app.outbox — RG-3 (spec fap-ldp §5.3). Concaténé avec les flows cœur + fap-ldp.json par scripts/assemble-flows.sh."
+ },
+ {
+  "id": "appsuphttpreq001",
+  "type": "http in",
+  "z": "tabappsup0001",
+  "name": "POST /app/query",
+  "url": "/app/query",
+  "method": "post",
+  "upload": false,
+  "swaggerDoc": "",
+  "x": 150,
+  "y": 100,
+  "wires": [
+   [
+    "appsupfnsess001"
+   ]
+  ]
+ },
+ {
+  "id": "appsupfnsess001",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "session OIDC requise + rate limit 60/min/user (C1.9)",
+  "func": "// C1.9/D-8 : sans header Authorization → 401 ; rate limit par utilisateur 60 req/min (fenêtre glissante, mémoire ORCE).\n// msg._skip = true → le switch suivant court-circuite vers la réponse d'erreur.\nconst auth = msg.req && msg.req.headers['authorization'];\nfunction dspErr(status, code, reasons) {\n  msg.statusCode = status;\n  msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg._skip = true;\n  return msg;\n}\nif (!auth) return dspErr(401, 'missing_credentials', ['Authorization: Bearer/DPoP requis (session OIDC)']);\nconst key = crypto.createHash('sha256').update(auth).digest('hex').slice(0, 16);\nconst now = Date.now();\nconst win = (global.get('appquery_rl') || {});\nconst arr = (win[key] || []).filter(t => now - t < 60000);\nif (arr.length >= 60) return dspErr(429, 'rate_limit_exceeded', ['60 req/min par utilisateur dépassé']);\narr.push(now); win[key] = arr; global.set('appquery_rl', win);\n// body original de /app/query (la réponse userinfo écrasera msg.payload ensuite)\nmsg._origBody = msg.payload;\nmsg._token = auth;\n// prépare l'appel userinfo IdP (interne, réseau docker) avec le token présenté\nmsg.url = env.get('IDP_USERINFO_URL');\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': auth };\nreturn msg;",
+  "outputs": 1,
+  "noerr": 0,
+  "x": 400,
+  "y": 100,
+  "wires": [
+   [
+    "appsupswitch001"
+   ]
+  ],
+  "libs": [
+   {
+    "module": "crypto",
+    "var": "crypto"
+   }
+  ]
+ },
+ {
+  "id": "appsupswitch001",
+  "type": "switch",
+  "z": "tabappsup0001",
+  "name": "erreur déjà prête ?",
+  "property": "_skip",
+  "propertyType": "msg",
+  "rules": [
+   {
+    "t": "true",
+    "v": "",
+    "vt": "str"
+   },
+   {
+    "t": "else"
+   }
+  ],
+  "checkall": "true",
+  "repair": false,
+  "outputs": 2,
+  "x": 640,
+  "y": 100,
+  "wires": [
+   [
+    "appsuphttpres01"
+   ],
+   [
+    "appsuprequser01"
+   ]
+  ]
+ },
+ {
+  "id": "appsuprequser01",
+  "type": "http request",
+  "z": "tabappsup0001",
+  "name": "userinfo IdP (validation session)",
+  "method": "use",
+  "ret": "obj",
+  "paytoqs": false,
+  "url": "",
+  "tls": "",
+  "timeout": "10",
+  "x": 880,
+  "y": 140,
+  "wires": [
+   [
+    "appsupfnsign001"
+   ]
+  ]
+ },
+ {
+  "id": "appsupfnsign001",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "check PDP (contrat-cadre org) + signature HMAC D-3 côté serveur",
+  "func": "// C1.9 : session valide (userinfo 200) + check PDP AVANT signature — le proxy ne bypass jamais le contrôle.\n// v1 : membres internes (claim org == FAP_ORG) → contrat-cadre interne DSP_AGREEMENT_ID (spec fap-ldp §7.1).\n// Puis signature HMAC forme canonique D-3 avec DSP_HMAC_SECRET — jamais côté navigateur (spec front §13.1).\nfunction dspErr(status, code, reasons) {\n  msg.statusCode = status;\n  msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg._skip = true;\n  return msg;\n}\nif (msg.statusCode !== 200 || !msg.payload || !msg.payload.webid) {\n  return dspErr(401, 'invalid_session', ['session OIDC invalide']);\n}\nconst claims = msg.payload;\nconst org = env.get('FAP_ORG') || 'fap-pod';\nif (claims.org !== org) {\n  return dspErr(403, 'forbidden', ['claim org=' + claims.org + ' != ' + org + ' : pas de contrat-cadre interne']);\n}\nconst orig = msg._origBody || {};\nconst assetId = orig.assetId, from = orig.from, to = orig.to;\nif (!assetId || !from || !to) {\n  return dspErr(400, 'invalid_request', ['body {assetId, from, to} requis (from/to ISO 8601)']);\n}\nconst secret = env.get('DSP_HMAC_SECRET') || '';\nconst agreement = env.get('DSP_AGREEMENT_ID') || '';\nconst path = env.get('DSP_DATA_PATH') || '/dsp/data';\nconst ts = new Date().toISOString();\nconst canonical = ['POST', path, assetId, from, to, ts].join('\\n');\nconst sig = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');\nmsg._audit = { agreement_id: agreement, asset_id: assetId, webid: claims.webid, role: claims.role };\nmsg.url = 'http://localhost:1880' + path;\nmsg.method = 'POST';\nmsg.headers = {\n  'Content-Type': 'application/json',\n  'X-DSP-Signature': sig,\n  'X-DSP-Agreement': agreement,\n  'X-DSP-Timestamp': ts,\n  'Authorization': 'VC ' + (claims.webid || '')   // VC header only, jamais en query string (RG-6)\n};\nmsg.payload = { assetId: assetId, from: from, to: to };\nreturn msg;",
+  "outputs": 1,
+  "noerr": 0,
+  "x": 1130,
+  "y": 140,
+  "wires": [
+   [
+    "appsupswitch002"
+   ]
+  ],
+  "libs": [
+   {
+    "module": "crypto",
+    "var": "crypto"
+   }
+  ]
+ },
+ {
+  "id": "appsupswitch002",
+  "type": "switch",
+  "z": "tabappsup0001",
+  "name": "erreur déjà prête ?",
+  "property": "_skip",
+  "propertyType": "msg",
+  "rules": [
+   {
+    "t": "true",
+    "v": "",
+    "vt": "str"
+   },
+   {
+    "t": "else"
+   }
+  ],
+  "checkall": "true",
+  "repair": false,
+  "outputs": 2,
+  "x": 1370,
+  "y": 140,
+  "wires": [
+   [
+    "appsuphttpres01"
+   ],
+   [
+    "appsupreqdsp001"
+   ]
+  ]
+ },
+ {
+  "id": "appsupreqdsp001",
+  "type": "http request",
+  "z": "tabappsup0001",
+  "name": "data plane interne POST /dsp/data (signé)",
+  "method": "use",
+  "ret": "obj",
+  "paytoqs": false,
+  "url": "",
+  "tls": "",
+  "timeout": "30",
+  "x": 1620,
+  "y": 140,
+  "wires": [
+   [
+    "appsupfnaudit01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupfnaudit01",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "audit dsp_access_audit + réponse telle quelle",
+  "func": "// C1.9 : chaque appel est audité (agreement_id, webid, asset, ts). La réponse du data plane\n// ({assetId, schema, table, columns, rows, rowCount} ou dspace:Error) est renvoyée telle quelle.\nconst { Pool } = pgLib;\nconst p = new Pool({ connectionString: env.get('PG_ADMIN_DSN') });\nconst a = msg._audit || {};\nconst status = msg.statusCode || 200;\np.query('INSERT INTO public.dsp_access_audit (agreement_id, asset_id, ts, status, path) VALUES ($1,$2,now(),$3,$4)',\n  [a.agreement_id || '', a.asset_id || '', status, '/app/query'])\n  .catch(e => node.warn('audit /app/query: ' + e.message))\n  .finally(() => p.end());\nmsg.headers = { 'Content-Type': 'application/json' };\nreturn msg;",
+  "outputs": 1,
+  "noerr": 0,
+  "x": 1860,
+  "y": 140,
+  "wires": [
+   [
+    "appsuphttpres01"
+   ]
+  ],
+  "libs": [
+   {
+    "module": "pg",
+    "var": "pgLib"
+   }
+  ]
+ },
+ {
+  "id": "appsuphttpres01",
+  "type": "http response",
+  "z": "tabappsup0001",
+  "name": "",
+  "statusCode": "",
+  "headers": {},
+  "x": 2080,
+  "y": 120,
+  "wires": []
+ },
+ {
+  "id": "appsupinject001",
+  "type": "inject",
+  "z": "tabappsup0001",
+  "name": "outbox toutes les 30 s (RG-3)",
+  "props": [],
+  "repeat": "30",
+  "crontab": "",
+  "once": true,
+  "onceDelay": 10,
+  "x": 160,
+  "y": 260,
+  "wires": [
+   [
+    "appsupfnoutbox01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupfnoutbox01",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "lit app.outbox pending → gate_ingest (rôle gate) → marque processed_at",
+  "func": "// RG-3 (spec fap-ldp §5.3) : aucune écriture directe de l'app dans bronze/silver/gold.\n// L'outbox (trigger app.outbox_trigger + pg_notify('fap_ingest')) est consommé ici :\n// chaque événement part en bronze via public.gate_ingest() avec le rôle gate (INSERT bronze only).\n// Implémentation polling 30 s (listener pg_notify = optimisation ultérieure).\nconst { Pool } = pgLib;\nconst appPool = new Pool({ connectionString: env.get('PG_APP_DSN') });\nconst gatePool = new Pool({ connectionString: env.get('PG_GATE_DSN') });\n(async () => {\n  try {\n    const rs = await appPool.query(\n      'SELECT id, event_type, payload FROM app.outbox WHERE processed_at IS NULL ORDER BY id LIMIT 100');\n    for (const row of rs.rows) {\n      try {\n        await gatePool.query(\n          \"SELECT public.gate_ingest('app.event', $1::jsonb, 'app-supervision/outbox', 'app', $2)\",\n          [JSON.stringify(row.payload), 'outbox/' + row.id]);\n        await appPool.query('UPDATE app.outbox SET processed_at = now() WHERE id = $1', [row.id]);\n      } catch (e) {\n        node.warn('outbox id=' + row.id + ' en échec (retry au prochain cycle) : ' + e.message);\n      }\n    }\n  } catch (e) {\n    node.error('outbox: ' + e.message, msg);\n  } finally {\n    appPool.end(); gatePool.end();\n  }\n  node.done();\n})();\nreturn null;",
+  "outputs": 1,
+  "noerr": 0,
+  "x": 470,
+  "y": 260,
+  "wires": [],
+  "libs": [
+   {
+    "module": "pg",
+    "var": "pgLib"
+   }
+  ]
+ },
+ {
+  "id": "appsupllmin001",
+  "type": "http in",
+  "z": "tabappsup0001",
+  "name": "POST /app/llm (CR-5)",
+  "url": "/app/llm",
+  "method": "post",
+  "upload": false,
+  "swaggerDoc": "",
+  "x": 150,
+  "y": 360,
+  "wires": [
+   [
+    "appsupllmsess01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmsess01",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "session OIDC requise + rate limit 10/min/user (CR-5)",
+  "func": "// CR-5 (spec app-store-catalogue §2/§4.6) : endpoint LLM POST /app/llm — FONCTION, pas une\n// ressource de données. Auth session OIDC (userinfo), rate limit 10 req/min/user (fenêtre\n// glissante mémoire ORCE), audit dsp.audit. Les données demandées sont lues EN LDP (conteneur\n// publié, CR-0) via le PEP interne avec le token de l'utilisateur → ACL/RLS appliquées.\nfunction dspErr(status, code, reasons) {\n  msg.statusCode = status;\n  msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg._skip = true;\n  return msg;\n}\nconst auth = msg.req && msg.req.headers['authorization'];\nif (!auth) return dspErr(401, 'missing_credentials', ['Authorization: Bearer/DPoP requis (session OIDC)']);\nconst key = crypto.createHash('sha256').update(auth).digest('hex').slice(0, 16);\nconst now = Date.now();\nconst win = (global.get('appllm_rl') || {});\nconst arr = (win[key] || []).filter(t => now - t < 60000);\nif (arr.length >= 10) return dspErr(429, 'rate_limit_exceeded', ['10 req/min par utilisateur dépassé (CR-5)']);\narr.push(now); win[key] = arr; global.set('appllm_rl', win);\nmsg._origBody = msg.payload;\nmsg._token = auth;\nmsg.url = env.get('IDP_USERINFO_URL');\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': auth };\nreturn msg;\n",
+  "outputs": 1,
+  "x": 150,
+  "y": 320,
+  "wires": [
+   [
+    "appsupllmsw001"
+   ]
+  ],
+  "timeout": "",
+  "noerr": 0,
+  "libs": [
+   {
+    "module": "crypto",
+    "var": "crypto"
+   }
+  ]
+ },
+ {
+  "id": "appsupllmsw001",
+  "type": "switch",
+  "z": "tabappsup0001",
+  "name": "erreur déjà prête ?",
+  "property": "_skip",
+  "propertyType": "msg",
+  "rules": [
+   {
+    "t": "true",
+    "v": "",
+    "vt": "str"
+   },
+   {
+    "t": "else"
+   }
+  ],
+  "checkall": "true",
+  "repair": false,
+  "outputs": 2,
+  "x": 420,
+  "y": 320,
+  "wires": [
+   [
+    "appsupllmres01"
+   ],
+   [
+    "appsupllmuser01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmuser01",
+  "type": "http request",
+  "z": "tabappsup0001",
+  "name": "userinfo IdP (validation session)",
+  "method": "use",
+  "ret": "obj",
+  "paytoqs": false,
+  "url": "",
+  "tls": "",
+  "timeout": "10",
+  "x": 660,
+  "y": 360,
+  "wires": [
+   [
+    "appsupllmsess02"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmsess02",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "check session + whitelist assets (synchrone)",
+  "func": "// CR-5 : session valide (userinfo 200) puis whitelist serveur des assets (conteneurs gold\n// publiés LDP — CR-0). Jamais tout le gold sans ACL. Le payload devient la liste des assets\n// à lire (split). PAS d'async ici (le runtime ORCE ne rend pas la main aux function nodes\n// async des flows HTTP) : la lecture se fait nœud par nœud (split → http request → join).\nfunction dspErr(status, code, reasons) {\n  msg.statusCode = status;\n  msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error', 'dspace:code': code, 'dspace:reason': reasons };\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg._skip = true;\n  return msg;\n}\nif (msg.statusCode !== 200 || !msg.payload || !msg.payload.webid) {\n  return dspErr(401, 'invalid_session', ['session OIDC invalide']);\n}\nconst claims = msg.payload;\nconst body = msg._origBody || {};\nconst assets = Array.isArray(body.assets) ? body.assets : [];\nconst prompt = String(body.prompt || '');\nif (!prompt) return dspErr(400, 'invalid_request', ['body {assets: [...], prompt, model?} requis']);\nconst whitelist = (env.get('LLM_ASSETS') || '/gold/anomaly_candidates/,/gold/city_dashboard_summary/,/gold/energy_balance_hourly/,/gold/energy_cost_daily/,/gold/event_impact_daily/,/gold/intervention_anomaly_daily/,/gold/net_grid_hourly/,/gold/pv_performance_hourly/,/gold/streetlight_zone_hourly/,/gold/weather_hourly/,/gold/price_hourly/,/gold/city_event_hourly/,/gold/annual_site_consumption/').split(',').map(s => s.trim()).filter(Boolean);\nconst wanted = assets.filter(a => whitelist.indexOf(a) >= 0);\nconst rejected = assets.filter(a => whitelist.indexOf(a) < 0);\nif (rejected.length) return dspErr(403, 'forbidden', ['assets hors whitelist serveur: ' + rejected.join(', ')]);\nif (!wanted.length) return dspErr(400, 'invalid_request', ['aucun asset autorisé dans la requête']);\nmsg._llm = { webid: claims.webid, prompt: prompt, model: body.model || 'default', assets: wanted };\nmsg.payload = wanted;   // → split\nreturn msg;\n",
+  "outputs": 1,
+  "x": 920,
+  "y": 360,
+  "wires": [
+   [
+    "appsupllmsw002"
+   ]
+  ],
+  "timeout": "",
+  "noerr": 0
+ },
+ {
+  "id": "appsupllmsw002",
+  "type": "switch",
+  "z": "tabappsup0001",
+  "name": "erreur déjà prête ?",
+  "property": "_skip",
+  "propertyType": "msg",
+  "rules": [
+   {
+    "t": "true",
+    "v": "",
+    "vt": "str"
+   },
+   {
+    "t": "else"
+   }
+  ],
+  "checkall": "true",
+  "repair": false,
+  "outputs": 2,
+  "x": 1160,
+  "y": 360,
+  "wires": [
+   [
+    "appsupllmres01"
+   ],
+   [
+    "appsupllmsplit01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmsplit01",
+  "type": "split",
+  "z": "tabappsup0001",
+  "name": "un msg par asset",
+  "splt": "\\n",
+  "spltType": "str",
+  "arraySplt": 1,
+  "arraySpltType": "len",
+  "stream": false,
+  "addname": "",
+  "x": 1380,
+  "y": 360,
+  "wires": [
+   [
+    "appsupllmprep01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmprep01",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "prépare GET LDP interne de l'asset (token user → ACL/RLS)",
+  "func": "// L asset demandé est lu EN LDP, en interne (même runtime), avec le token de l'utilisateur :\n// le PEP applique ACL/RLS — l'endpoint ne voit jamais plus que ce que l'utilisateur peut lire.\nmsg._asset = String(msg.payload);\nmsg.url = 'http://localhost:1880' + msg._asset;\nmsg.method = 'GET';\nmsg.headers = { 'Authorization': msg._token, 'Accept': 'application/ld+json' };\nmsg.payload = null;\nreturn msg;\n",
+  "outputs": 1,
+  "x": 1600,
+  "y": 400,
+  "wires": [
+   [
+    "appsupllmreqldp01"
+   ]
+  ],
+  "timeout": "",
+  "noerr": 0
+ },
+ {
+  "id": "appsupllmreqldp01",
+  "type": "http request",
+  "z": "tabappsup0001",
+  "name": "lecture conteneur LDP interne (ACL/RLS appliquées)",
+  "method": "use",
+  "ret": "obj",
+  "paytoqs": false,
+  "url": "",
+  "tls": "",
+  "timeout": "15",
+  "x": 1840,
+  "y": 400,
+  "wires": [
+   [
+    "appsupllmjoin01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmjoin01",
+  "type": "join",
+  "z": "tabappsup0001",
+  "name": "assets lus (array)",
+  "mode": "auto",
+  "build": "array",
+  "property": "payload",
+  "key": "topic",
+  "joiner": "\\n",
+  "timeout": "5",
+  "x": 2080,
+  "y": 400,
+  "wires": [
+   [
+    "appsupllmassemb01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmassemb01",
+  "type": "function",
+  "z": "tabappsup0001",
+  "name": "audit dsp.audit + assemble contexte + 503 si pas de LLM_ENDPOINT",
+  "func": "// CR-5 : audit de chaque appel (dsp.audit, fire-and-forget comme /app/query), puis assemblage\n// du contexte depuis les conteneurs LDP lus. Sans LLM_ENDPOINT → 503 llm_not_configured.\n// Avec LLM_ENDPOINT → prépare l'appel LLM (nœud suivant).\nconst { Pool } = pgLib;\nconst p = new Pool({ connectionString: env.get('PG_ADMIN_DSN') });\nconst llm = msg._llm || {};\np.query('INSERT INTO dsp.audit (agreement_id, webid, resource_uri, mode, decision) VALUES ($1,$2,$3,$4,$5)',\n  [env.get('DSP_AGREEMENT_ID') || '', llm.webid || '', '/app/llm', 'llm', 'allow'])\n  .catch(e => node.warn('audit /app/llm: ' + e.message))\n  .finally(() => p.end());\n// join mode auto : msg.payload = array des payloads (les documents LDP lus)\nconst parts = Array.isArray(msg.payload) ? msg.payload : [msg.payload];\nconst ctx = parts.map(r => ({\n  asset: r && r['@id'],\n  members: r && r['ldp:contains'] ? r['ldp:contains'].length : 0\n}));\nconst endpoint = env.get('LLM_ENDPOINT') || '';\nif (!endpoint) {\n  msg.statusCode = 503;\n  msg.payload = { '@context': 'https://w3id.org/dspace/2025/1/context.jsonld', '@type': 'dspace:Error',\n    'dspace:code': 'llm_not_configured',\n    'dspace:reason': ['LLM_ENDPOINT non configuré côté serveur — assets lus en LDP: ' + (llm.assets || []).join(', ')],\n    assetsRead: llm.assets || [], context: ctx };\n  msg.headers = { 'Content-Type': 'application/json' };\n  msg._skip = true;\n  return msg;\n}\nmsg.url = endpoint;\nmsg.method = 'POST';\nmsg.headers = { 'Content-Type': 'application/json' };\nif (env.get('LLM_API_KEY')) msg.headers['Authorization'] = 'Bearer ' + env.get('LLM_API_KEY');\nmsg.payload = { model: llm.model, prompt: llm.prompt, context: ctx };\nreturn msg;\n",
+  "outputs": 1,
+  "x": 2300,
+  "y": 400,
+  "wires": [
+   [
+    "appsupllmsw003"
+   ]
+  ],
+  "timeout": "",
+  "noerr": 0,
+  "libs": [
+   {
+    "module": "pg",
+    "var": "pgLib"
+   }
+  ]
+ },
+ {
+  "id": "appsupllmsw003",
+  "type": "switch",
+  "z": "tabappsup0001",
+  "name": "erreur déjà prête ?",
+  "property": "_skip",
+  "propertyType": "msg",
+  "rules": [
+   {
+    "t": "true",
+    "v": "",
+    "vt": "str"
+   },
+   {
+    "t": "else"
+   }
+  ],
+  "checkall": "true",
+  "repair": false,
+  "outputs": 2,
+  "x": 2520,
+  "y": 400,
+  "wires": [
+   [
+    "appsupllmres01"
+   ],
+   [
+    "appsupllmreq01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmreq01",
+  "type": "http request",
+  "z": "tabappsup0001",
+  "name": "appel LLM externe (LLM_ENDPOINT)",
+  "method": "use",
+  "ret": "obj",
+  "paytoqs": false,
+  "url": "",
+  "tls": "",
+  "timeout": "60",
+  "x": 2740,
+  "y": 440,
+  "wires": [
+   [
+    "appsupllmres01"
+   ]
+  ]
+ },
+ {
+  "id": "appsupllmres01",
+  "type": "http response",
+  "z": "tabappsup0001",
+  "name": "",
+  "statusCode": "",
+  "headers": {},
+  "x": 2980,
+  "y": 380,
+  "wires": []
+ }
+]

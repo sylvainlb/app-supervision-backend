@@ -1,0 +1,115 @@
+{
+ "$comment": "Modèle métier du déploiement 'supervision énergétique' (spec supervision-energetique-spec-fonctionnelle.md §4.1, RG-1/RG-2). Appliqué au boot par le nœud fap-ldp : tables app.*, triggers (updated_at, versioning, tombstone, outbox), FORCE RLS + policies auth.can(), dsp.asset_mapping, ACL initiales. Base : fap-ldp/examples/supervision/model.json + change requests spec front §13.4 (lat/lon WGS84 sur buildings) et §13.5 (priority LOW|MEDIUM|HIGH|CRITICAL défaut MEDIUM) + spec fap-ldp v0.4 décision K (business_rules ticket_status_workflow, rejet 409 invalid_transition, CA-L15). Dialecte des champs = parser du nœud model.js : '<type> fk <table>(<col>)', '<type> check in (...)', commentaire entre parenthèses en FIN de chaîne (sans rien après). RG-1 (ticket toujours rattaché à un bâtiment) : building_id en FK, imposé aussi côté PEP.",
+ "base_iri": "https://<pod>/",
+ "tables": {
+  "users": {
+   "pk": "id",
+   "owner": null,
+   "published": false,
+   "fields": {
+    "id": "bigserial",
+    "webid": "text unique not null",
+    "name": "text not null",
+    "email": "text unique",
+    "role": "text check in ('gestionnaire','technicien','admin')",
+    "created_at": "timestamptz default now()",
+    "updated_at": "timestamptz default now()"
+   }
+  },
+  "buildings": {
+   "pk": "id",
+   "owner": null,
+   "published": true,
+   "fields": {
+    "id": "bigserial",
+    "name": "text not null",
+    "address": "text",
+    "meter_id": "text",
+    "facis_asset": "text",
+    "lat": "double precision",
+    "lon": "double precision",
+    "area_m2": "double precision",
+    "created_at": "timestamptz default now()",
+    "updated_at": "timestamptz default now()"
+   }
+  },
+  "tickets": {
+   "pk": "id",
+   "owner": "created_by",
+   "published": false,
+   "tombstone": "deleted_at",
+   "fields": {
+    "id": "bigserial",
+    "title": "text not null",
+    "description": "text",
+    "status": "text default 'OPEN' check in ('OPEN','IN_PROGRESS','RESOLVED','CLOSED')",
+    "priority": "text default 'MEDIUM' check in ('LOW','MEDIUM','HIGH','CRITICAL')",
+    "building_id": "bigint fk buildings(id)",
+    "anomaly_ref": "text",
+    "created_by": "bigint fk users(id)",
+    "assigned_to": "bigint fk users(id)",
+    "created_at": "timestamptz default now()",
+    "updated_at": "timestamptz default now()",
+    "deleted_at": "timestamptz"
+   }
+  },
+  "comments": {
+   "pk": "id",
+   "owner": "author",
+   "published": false,
+   "parent": "tickets",
+   "parent_fk": "ticket_id",
+   "fields": {
+    "id": "bigserial",
+    "ticket_id": "bigint fk tickets(id)",
+    "author": "bigint fk users(id)",
+    "text": "text not null",
+    "ts": "timestamptz default now()"
+   }
+  }
+ },
+ "business_rules": [
+  {
+   "name": "ticket_status_workflow",
+   "table": "tickets",
+   "field": "status",
+   "doc": "RG-2 + spec front 13.5 + décision K (CA-L15) : transition invalide → 409 dspace:Error invalid_transition. 'assigned_to' = utilisateur assigné au ticket.",
+   "on_create": {
+    "OPEN": [
+     "gestionnaire"
+    ]
+   },
+   "transitions": {
+    "OPEN": {
+     "IN_PROGRESS": [
+      "gestionnaire",
+      "assigned_to"
+     ]
+    },
+    "IN_PROGRESS": {
+     "RESOLVED": [
+      "gestionnaire",
+      "assigned_to"
+     ]
+    },
+    "RESOLVED": {
+     "CLOSED": [
+      "gestionnaire"
+     ],
+     "IN_PROGRESS": [
+      "gestionnaire"
+     ]
+    },
+    "CLOSED": {
+     "OPEN": [
+      "gestionnaire"
+     ]
+    }
+   },
+   "reject": {
+    "http": 409,
+    "code": "invalid_transition"
+   }
+  }
+ ]
+}

@@ -1,0 +1,189 @@
+# ============================================================================
+# energy-supervision — stack backend complète (profil FAP-light + FAP-LDP)
+#   PostgreSQL (bronze/silver/gold/app/auth/dsp) + ORCE (cœur FAP-light +
+#   package node-red-contrib-fap-ldp + fragment app-supervision) + caddy (frontal :
+#   LDP racine, /auth, /dsp/*, /app/query, /editor — CORS pour le front autonome)
+#   + Keycloak (realm fap-light)
+#   + mosquitto (MQTT) + sftp (source externe).
+# Images 100% locales (aucun pull) : postgres:16-alpine, ecofacis/xfsc-orce:2.0.13,
+#   quay.io/keycloak/keycloak:26.0, caddy:2, eclipse-mosquitto:2, atmoz/sftp:latest.
+#
+# Lancé par ./scripts/deploy-local.sh (ne pas lancer à la main : .build/ doit
+# être généré d'abord — flows assemblés, initdb, realm rendu).
+# ============================================================================
+name: energy-supervision
+
+services:
+  # ---------------------------------------------------------- PostgreSQL
+  postgres:
+    # image custom du cœur FAP-light (pg_cron installé — absent de postgres:16-alpine)
+    image: fap-light-postgres
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:?PG_ADMIN_PASSWORD requis dans .env}
+      POSTGRES_DB: fap
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?requis}
+      PG_MATERIALIZER_PASSWORD: ${PG_MATERIALIZER_PASSWORD:-}
+      DSP_AGREEMENT_ID: ${DSP_AGREEMENT_ID:-agreement:interne:contrat-cadre}
+    # pg_cron préchargé (materializers in-database, spec cœur §C1.5)
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=fap"]
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../.build/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d fap"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ---------------------------------------------------------- ORCE (Node-RED)
+  orce:
+    # image ORCE du cœur FAP-light (pg et modules bakinés dans /data/node_modules,
+    # requis par le package node-red-contrib-fap-ldp monté ci-dessous)
+    image: fap-light-orce
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+      FLOWS: /data/flows/flows.json
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: fap
+      PG_GATE_USER: gate
+      PG_GATE_PASSWORD: ${PG_GATE_PASSWORD:?requis}
+      PG_READER_USER: reader
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?requis}
+      PG_APP_USER: app
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?requis}
+      PG_ADMIN_USER: admin
+      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:?requis}
+      # DSN explicites (pools des flows custom app-supervision + fap-ldp)
+      PG_GATE_DSN: "postgres://gate:${PG_GATE_PASSWORD}@postgres:5432/fap"
+      PG_APP_DSN: "postgres://app:${PG_APP_PASSWORD}@postgres:5432/fap"
+      PG_READER_DSN: "postgres://reader:${PG_READER_PASSWORD}@postgres:5432/fap"
+      PG_ADMIN_DSN: "postgres://admin:${PG_ADMIN_PASSWORD}@postgres:5432/fap"
+      # data plane DSP (cœur) — le proxy /app/query signe avec ce secret (D-3)
+      DSP_HMAC_SECRET: ${DSP_HMAC_SECRET:?requis}
+      DSP_DATA_PATH: /dsp/data
+      DSP_DATASETS_PATH: /data/dsp-config/datasets.json
+      DSP_AGREEMENT_ID: ${DSP_AGREEMENT_ID:-agreement:interne:contrat-cadre}
+      # CR-5 : endpoint LLM POST /app/llm (flow app-supervision). Vide par défaut :
+      # sans LLM_ENDPOINT, l'endpoint répond 503 llm_not_configured (données lues + auditées).
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_ASSETS: ${LLM_ASSETS:-}
+      # simulation + SFTP
+      SIM_SITE_ID: ${SIM_SITE_ID:-site-berlin-001}
+      SIM_SEED: ${SIM_SEED:-fap-light}
+      SFTP_HOST: sftp
+      SFTP_PORT: "22"
+      SFTP_USER: ${SFTP_USER:-fap}
+      SFTP_PASSWORD: ${SFTP_PASSWORD:-}
+      SFTP_INGEST_DIR: /ingest
+      SFTP_ARCHIVE_DIR: /archive
+      SFTP_MAX_BYTES: "1048576"
+      # FAP-LDP (nœud fap-ldp au boot : applique /config/model.json)
+      FAP_LDP_CONFIG: /config/model.json
+      FAP_LDP_BASE_IRI: "${BASE_IRI:-http://app.localhost/}"   # dérivé de ENV (dev=http, staging/prod=https)
+      FAP_ORG: ${FAP_ORG:-fap-pod}
+      # userinfo INTERNE (depuis le conteneur orce, via le réseau docker)
+      # Keycloak sert sous /auth (--http-relative-path /auth) : URL interne avec /auth.
+      IDP_USERINFO_URL: "http://keycloak:8080/auth/realms/fap-light/protocol/openid-connect/userinfo"
+      FAP_LDP_VC_TRUST_ANCHORS: ""
+      FAP_LDP_GOLD_MAX_ROWS: "10000"
+    ports:
+      - "${ORCE_PORT:-1880}:1880"
+    # l'image déclare VOLUME /data : un bind file→/data/flows.json échoue ("not a
+    # directory") → on monte .build/ en dossier et l'entrypoint custom copie flows.json
+    # au boot (entrypoint, pas command : l'image a déjà un ENTRYPOINT).
+    entrypoint: ["/usr/local/bin/orce-app-entrypoint.sh"]
+    volumes:
+      - ../.build:/flows-app:ro
+      - ../scripts/orce-entrypoint.sh:/usr/local/bin/orce-app-entrypoint.sh:ro
+      - ../config:/config:ro
+      # package node-red-contrib-fap-ldp (cœur de l'extension, monté en lecture seule)
+      - ../../fap-ldp/core/nodes:/data/node_modules/node-red-contrib-fap-ldp:ro
+      # ext E11 model-injection (nœuds fap-ldp-mi-boot / fap-ldp-mi-admin, v2 app store)
+      - ../../fap-ldp/ext/model-injection:/data/node_modules/node-red-contrib-fap-ldp-model-injection:ro
+      # catalogue DSP du cœur (datasets.json)
+      - ../../fap-light-serveur/deploy/orce/data/dsp-config:/data/dsp-config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------- IdP (Keycloak 26.x, D-4)
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.0
+    restart: unless-stopped
+    # Sert sous /auth (KC_HOSTNAME=.../auth) : caddy ne strippe PAS le préfixe,
+    # sinon la validation DPoP (htu) de Keycloak voit une URL sans /auth → mismatch.
+    command: start-dev --import-realm --http-relative-path /auth
+    environment:
+      TZ: UTC
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?requis}
+      KC_HOSTNAME: "${BASE_IRI:-http://app.localhost/}auth"   # issuer = ${BASE_IRI}auth/realms/fap-light
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      # caddy strippe /auth et forward X-Forwarded-* : Keycloak doit s'appuyer sur
+      # l'URL frontend (KC_HOSTNAME) pour reconstruire la requête — sinon le check
+      # DPoP (htu) échoue avec « DPoP HTTP URL mismatch ».
+      KC_PROXY_HEADERS: "xforwarded"
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
+    volumes:
+      - ../.build/keycloak:/opt/keycloak/data/import:ro
+
+  # ---------------------------------------------------------- caddy (TLS frontal)
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}   # informatif — le Caddyfile rendu est fully statique
+    # permet au site front (app.localhost:80 en dev) de proxifier le serveur vite
+    # du client tournant sur l'hôte (aucun fichier du client n'est monté ici)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Caddyfile RENDU par scripts/deploy-local.sh selon ENV (dev=HTTP :80, staging/prod=HTTPS)
+      # Le front (../app-supervision) est AUTONOME : AUCUN fichier du client n'est monté ici.
+      - ../.build/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - orce
+      - keycloak
+
+  # ---------------------------------------------------------- broker MQTT (sources capteurs)
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ../../fap-light-serveur/deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+
+  # ---------------------------------------------------------- serveur SFTP (source externe)
+  sftp:
+    image: atmoz/sftp:latest
+    restart: unless-stopped
+    command: "${SFTP_USER:-fap}:${SFTP_PASSWORD:-}:::ingest,archive"
+    ports:
+      - "${SFTP_PUBLISHED_PORT:-2222}:22"
+    volumes:
+      - ../../fap-light-serveur/deploy/sftp/authorized_keys:/etc/ssh/authorized_keys:ro
+      - sftp-data:/home/${SFTP_USER:-fap}
+
+volumes:
+  pg-data:
+  caddy-data:
+  caddy-config:
+  sftp-data:

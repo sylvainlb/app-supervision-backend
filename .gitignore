@@ -1,0 +1,6 @@
+# secrets et environnement local
+.env
+
+# générés
+.build/
+flows/flows.json
