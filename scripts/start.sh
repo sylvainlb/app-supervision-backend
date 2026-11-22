@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# start.sh — démarre le BACKEND energy-supervision (stack docker complète).
-# Le front (../app-supervision) est AUTONOME : il se lance séparément depuis son
-# propre répertoire (voir le résumé affiché en fin de script).
+# start.sh — starts the energy-supervision BACKEND (full docker stack).
+# The front (../app-supervision) is AUTONOMOUS: it is launched separately from its
+# own directory (see the summary printed at the end of the script).
 #
-# Usage : ./scripts/start.sh [--reset]
-#   --reset : docker compose down -v d'abord (volumes supprimés : données perdues,
-#             re-seed complet au boot — utile après un changement de BASE_IRI/domaine)
+# Usage: ./scripts/start.sh [--reset]
+#   --reset: docker compose down -v first (volumes deleted: data lost,
+#             full re-seed at boot — useful after a BASE_IRI/domain change)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 RESET=0
 for a in "$@"; do
   case "$a" in
     --reset) RESET=1 ;;
-    *) echo "[start] option inconnue: $a (attendu: --reset)" >&2; exit 2 ;;
+    *) echo "[start] unknown option: $a (expected: --reset)" >&2; exit 2 ;;
   esac
 done
 
 dc() { docker compose --project-name energy-supervision --env-file "$HERE/.env" -f "$HERE/compose/docker-compose.yml" "$@"; }
 
 if [ "$RESET" = 1 ]; then
-  echo "[start] --reset : arrêt + suppression des volumes (données perdues)…"
+  echo "[start] --reset: shutdown + volume deletion (data lost)…"
   dc down -v || true
 fi
 
-echo "[start] déploiement backend (deploy-local.sh)…"
+echo "[start] backend deployment (deploy-local.sh)…"
 bash "$HERE/scripts/deploy-local.sh"
 
-# .env a été synchronisé par deploy-local.sh : on relit les URLs dérivées
+# .env was synchronized by deploy-local.sh: re-read the derived URLs
 set -a; . "$HERE/.env"; set +a
 SCHEME="${SCHEME:-http}"; API_DOMAIN="${API_DOMAIN:-localhost}"
 BASE_IRI="${BASE_IRI:-$SCHEME://$API_DOMAIN/}"
@@ -34,17 +34,17 @@ BASE="$SCHEME://$API_DOMAIN"
 
 echo
 echo "[start] ============================================================"
-echo "[start]  Backend energy-supervision démarré. URLs du BACK :"
-echo "[start]    LDP (JSON-LD)      : $BASE_IRI   (ex. ${BASE_IRI}buildings/ avec Bearer)"
-echo "[start]    IdP (Keycloak)     : ${BASE_IRI}auth/realms/fap-light   (users: alice/bob/admin, mdp: ${DEMO_PASSWORD:-dev})"
-echo "[start]    DSP (catalogue)    : POST ${BASE_IRI}dsp/catalogue/request"
-echo "[start]    Proxy signé        : POST ${BASE_IRI}app/query  (session OIDC/DPoP requise, CORS ok)"
-echo "[start]    Editeur Node-RED   : ${BASE_IRI}editor/"
+echo "[start]  energy-supervision Backend started. BACK URLs:"
+echo "[start]    LDP (JSON-LD)      : $BASE_IRI   (e.g. ${BASE_IRI}buildings/ with Bearer)"
+echo "[start]    IdP (Keycloak)     : ${BASE_IRI}auth/realms/fap-light   (users: alice/bob/admin, password: ${DEMO_PASSWORD:-dev})"
+echo "[start]    DSP (catalog)      : POST ${BASE_IRI}dsp/catalogue/request"
+echo "[start]    Signed proxy       : POST ${BASE_IRI}app/query  (OIDC/DPoP session required, CORS ok)"
+echo "[start]    Node-RED editor    : ${BASE_IRI}editor/"
 if [ "$SCHEME" = "https" ] && [ "${ENV:-dev}" != "prod" ]; then
-  echo "[start]    Certificat auto-signé : importer UNE FOIS .build/caddy-root.crt dans le navigateur"
+  echo "[start]    Self-signed certificate: import .build/caddy-root.crt ONCE into the browser"
 fi
 echo "[start]  ------------------------------------------------------------"
-echo "[start]  FRONT (autonome, depuis son propre répertoire) :"
+echo "[start]  FRONT (autonomous, from its own directory):"
 echo "[start]    cd ../app-supervision && ./scripts/configure.sh $BASE && npm run dev"
-echo "[start]    → http://app.localhost/   (port 80 via caddy ; appels cross-origin vers $BASE, CORS géré)"
+echo "[start]    → http://app.localhost/   (port 80 via caddy ; cross-origin calls to $BASE, CORS handled)"
 echo "[start] ============================================================"

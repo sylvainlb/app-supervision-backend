@@ -1,151 +1,151 @@
 # app-supervision-backend
 
-Backend de l'application de supervision énergétique — implémentation de
-`spec/supervision-energetique-spec-fonctionnelle.md` sur le profil **FAP-light** avec
-l'extension **FAP-LDP**.
+Backend of the energy supervision application — implementation of
+`spec/supervision-energetique-spec-fonctionnelle.md` on the **FAP-light** profile with
+the **FAP-LDP** extension.
 
-Ce répertoire est le **dossier de déploiement** (`DEPLOY_DIR` au sens de
-`fap-ldp/compose/README.md`) : il ne contient ni le cœur FAP ni l'extension, il les
-*assemble* :
+This directory is the **deployment directory** (`DEPLOY_DIR` in the sense of
+`fap-ldp/compose/README.md`): it contains neither the FAP core nor the extension, it
+*assembles* them:
 
 ```
-UI blox (app-supervision/, AUTONOME : servi par vite depuis son propre répertoire,
-        appelle le back en absolu cross-origin — CORS)
-        │  LDP/JSON-LD (racine /)  +  POST /app/query (proxy signé)  +  /dsp/*  +  /auth/* (Keycloak)
-        ▼  (tout sur le domaine du back, ex. http://localhost/ en dev)
+UI blox (app-supervision/, AUTONOMOUS: served by vite from its own directory,
+        calls the back in absolute cross-origin — CORS)
+        │  LDP/JSON-LD (root /)  +  POST /app/query (signed proxy)  +  /dsp/*  +  /auth/* (Keycloak)
+        ▼  (all on the back domain, e.g. http://localhost/ in dev)
 ┌────────────────────────────────────────────┐
 │  ORCE (Node-RED) — 1 runtime               │
-│  ├── flows cœur FAP-light (../fap-light-serveur)  : gate, ingestion, catalogue DSP, /dsp/data
-│  ├── package node-red-contrib-fap-ldp (../fap-ldp) : conteneur LDP, PDP, PEP app.*
-│  └── fragment app-supervision.json (ici)   : POST /app/query (C1.9/D-8), outbox → bronze (RG-3)
+│  ├── FAP-light core flows (../fap-light-serveur)  : gate, ingestion, DSP catalog, /dsp/data
+│  ├── package node-red-contrib-fap-ldp (../fap-ldp) : LDP container, PDP, PEP app.*
+│  └── app-supervision.json fragment (here)   : POST /app/query (C1.9/D-8), outbox → bronze (RG-3)
 └───────────┬────────────────────────────────┘
-            │ SQL, rôles PG séparés (gate / app / reader / materializer / admin)
+            │ SQL, separate PG roles (gate / app / reader / materializer / admin)
             ▼
 ┌────────────────────────────────────────────┐
-│  PostgreSQL (1 VM, profil light)           │
-│  ├── bronze.* / silver.* / gold.*  (cœur FAP-light, inchangé)
-│  ├── app.*     (modèle métier supervision, appliqué au boot depuis config/model.json)
-│  ├── gold.intervention_anomaly_daily (matview publiée, sql/100 — F7/RG-5)
-│  └── auth.acl / dsp.*               (FAP-LDP : ACL, contrats, audit, asset_mapping)
+│  PostgreSQL (1 VM, light profile)          │
+│  ├── bronze.* / silver.* / gold.*  (FAP-light core, unchanged)
+│  ├── app.*     (supervision business model, applied at boot from config/model.json)
+│  ├── gold.intervention_anomaly_daily (published matview, sql/100 — F7/RG-5)
+│  └── auth.acl / dsp.*               (FAP-LDP: ACL, contracts, audit, asset_mapping)
 └────────────────────────────────────────────┘
-  + caddy (TLS, routes LDP/DSP/app)  +  Keycloak 26.x (realm fap-light, claims webid/role/org, DPoP)
+  + caddy (TLS, LDP/DSP/app routes)  +  Keycloak 26.x (realm fap-light, claims webid/role/org, DPoP)
 ```
 
-- **FAP-light** = `../fap-light-serveur` (cœur : PostgreSQL + ORCE + caddy + IdP, 1 VM, SPOF assumé).
-- **FAP-LDP** = `../fap-ldp` (extension : domaine `app.*`, endpoint LDP/JSON-LD, PDP/ACL/RLS — déployée
-  dans le même runtime ORCE, `fap-ldp/compose/`).
-- **Front** = `../app-supervision` (Startin'blox, servi par caddy à `/app/`).
+- **FAP-light** = `../fap-light-serveur` (core: PostgreSQL + ORCE + caddy + IdP, 1 VM, accepted SPOF).
+- **FAP-LDP** = `../fap-ldp` (extension: `app.*` domain, LDP/JSON-LD endpoint, PDP/ACL/RLS — deployed
+  in the same ORCE runtime, `fap-ldp/compose/`).
+- **Front** = `../app-supervision` (Startin'blox, served by caddy at `/app/`).
 
-## Arborescence de ce répertoire
+## Layout of this directory
 
 ```
 app-supervision-backend/
-├── .env.example            ← copier en .env et éditer (API_DOMAIN/APP_DOMAIN, secrets, chemins)
+├── .env.example            ← copy to .env and edit (API_DOMAIN/APP_DOMAIN, secrets, paths)
 ├── compose/
-│   └── docker-compose.yml  ← stack autonome energy-supervision (images 100% locales, aucun pull) :
-│                             postgres+pg_cron, orce (cœur + package fap-ldp + fragment app-supervision),
+│   └── docker-compose.yml  ← standalone energy-supervision stack (100% local images, no pull):
+│                             postgres+pg_cron, orce (core + fap-ldp package + app-supervision fragment),
 │                             keycloak, caddy, mosquitto, sftp
 ├── config/
-│   └── model.json          ← modèle métier app.* (users/buildings/tickets/comments), appliqué au boot
-│                             par le nœud fap-ldp : tables, triggers, RLS, asset_mapping, ACL
-├── sql/                    ← migrations custom (ordre: cœur → socle fap-ldp → custom, rejouées post-boot)
-│   ├── 100_gold_intervention_anomaly_daily.sql  ← matview gold publiée (F7, RG-5, CA-4) + refresh pg_cron
-│   ├── 101_seed_demo.sql                        ← parc/bâtiments de démo + users (webid = claims Keycloak)
-│   ├── 102_acl_init.sql                         ← ACL initiales (IRI complets, -v base_iri=… requis)
+│   └── model.json          ← app.* business model (users/buildings/tickets/comments), applied at boot
+│                             by the fap-ldp node: tables, triggers, RLS, asset_mapping, ACL
+├── sql/                    ← custom migrations (order: core → fap-ldp base → custom, replayed post-boot)
+│   ├── 100_gold_intervention_anomaly_daily.sql  ← published gold matview (F7, RG-5, CA-4) + pg_cron refresh
+│   ├── 101_seed_demo.sql                        ← demo fleet/buildings + users (webid = Keycloak claims)
+│   ├── 102_acl_init.sql                         ← initial ACLs (full IRIs, -v base_iri=… required)
 │   ├── 103_app_event_bronze.sql                 ← bronze.app_event + gate_type_map 'app.event' (RG-3)
-│   └── 104_gold_ldp_published.sql               ← conteneurs LDP publiés des agrégats gold (spec front §13.3)
+│   └── 104_gold_ldp_published.sql               ← published LDP containers of gold aggregates (front spec §13.3)
 ├── flows/
-│   └── app-supervision.json                   ← fragment ORCE (proxy /app/query C1.9/D-8, outbox RG-3)
+│   └── app-supervision.json                   ← ORCE fragment (proxy /app/query C1.9/D-8, outbox RG-3)
 ├── keycloak/
-│   └── realm.json          ← realm fap-light : client front fap-light-ui statique (D-7/I), claims
-│                             webid/role/org (H), DPoP, users de démo — rendu par envsubst (${DOMAIN})
+│   └── realm.json          ← fap-light realm: static front client fap-light-ui (D-7/I), claims
+│                             webid/role/org (H), DPoP, demo users — rendered by envsubst (${DOMAIN})
 ├── caddy/
-│   └── Caddyfile           ← RÉFÉRENCE prod : deux sites (api.<domaine> back + CORS, app.<domaine> front+proxy)
+│   └── Caddyfile           ← prod REFERENCE: two sites (api.<domain> back + CORS, app.<domain> front+proxy)
 ├── scripts/
-│   ├── start.sh            ← démarre le BACKEND (deploy-local.sh) + affiche les URLs (--reset)
-│   ├── stop.sh             ← arrête le backend (docker compose down, volumes conservés)
-│   ├── deploy-local.sh     ← déploiement idempotent : .env, .build/ (flows/initdb/Caddyfile/realm), compose up,
-│   │                           pg_cron, boot fap-ldp, rejoue sql/ custom, vérifs curl
-│   └── assemble-flows.sh   ← concatène flows cœur + fap-ldp + app-supervision.json → .build/flows/
-# Le front ../app-supervision est AUTONOME : aucune référence à lui dans ce dépôt
-# (il se configure/lance depuis son propre répertoire : scripts/configure.sh + npm run dev).
+│   ├── start.sh            ← starts the BACKEND (deploy-local.sh) + prints the URLs (--reset)
+│   ├── stop.sh             ← stops the backend (docker compose down, volumes kept)
+│   ├── deploy-local.sh     ← idempotent deployment: .env, .build/ (flows/initdb/Caddyfile/realm), compose up,
+│   │                           pg_cron, fap-ldp boot, replays sql/ custom, curl checks
+│   └── assemble-flows.sh   ← concatenates core flows + fap-ldp + app-supervision.json → .build/flows/
+# The front ../app-supervision is AUTONOMOUS: no reference to it in this repo
+# (it configures/launches from its own directory: scripts/configure.sh + npm run dev).
 ├── tck/
-│   └── README.md           ← mapping CA-1..CA-5 (spec fonctionnelle) → TCK cœur (CA-S*) / FAP-LDP (CA-L*)
-└── .build/                 ← généré (gitignoré) : flows/, initdb/, keycloak/, Caddyfile, caddy-root.crt rendus
+│   └── README.md           ← mapping CA-1..CA-5 (functional spec) → core TCK (CA-S*) / FAP-LDP (CA-L*)
+└── .build/                 ← generated (gitignored): rendered flows/, initdb/, keycloak/, Caddyfile, caddy-root.crt
 ```
 
-## URLs d'accès
+## Access URLs
 
-**Un seul domaine pour le back** (`API_DOMAIN`, `BASE_IRI` des ressources). **Le front est
-autonome** : aucune référence au client dans ce dépôt — il tourne depuis son propre
-répertoire `../app-supervision` (vite) et appelle le back en absolu, cross-origin
-(CORS géré par le back via `FRONT_ORIGINS`, `/auth` par Keycloak via `webOrigins`).
+**A single domain for the back** (`API_DOMAIN`, the resources' `BASE_IRI`). **The front is
+autonomous**: no client reference in this repo — it runs from its own
+`../app-supervision` directory (vite) and calls the back in absolute, cross-origin
+(CORS handled by the back via `FRONT_ORIGINS`, `/auth` by Keycloak via `webOrigins`).
 
-| Rôle | Dev (défaut, HTTP pur) | Staging/prod (HTTPS) |
+| Role | Dev (default, pure HTTP) | Staging/prod (HTTPS) |
 |---|---|---|
-| **Back LDP** | `http://localhost/` (ex. `/buildings/` avec Bearer) | `https://fap.example.com/` |
+| **Back LDP** | `http://localhost/` (e.g. `/buildings/` with Bearer) | `https://fap.example.com/` |
 | **IdP** | `http://localhost/auth/realms/fap-light` | `https://fap.example.com/auth/realms/fap-light` |
-| **DSP** | `POST http://localhost/dsp/catalogue/request` | idem en https |
-| **Proxy signé** | `POST http://localhost/app/query` (session OIDC/DPoP) | idem en https |
-| **Éditeur** | `http://localhost/editor/` | `https://fap.example.com/editor/` |
-| **Front (autonome)** | `http://app.localhost/` (port 80, caddy → vite ; `cd ../app-supervision && npm run dev`) | déployé à part, ex. `https://app.fap.example.com` (mettre son origine dans `FRONT_ORIGINS`) |
+| **DSP** | `POST http://localhost/dsp/catalogue/request` | same over https |
+| **Signed proxy** | `POST http://localhost/app/query` (OIDC/DPoP session) | same over https |
+| **Editor** | `http://localhost/editor/` | `https://fap.example.com/editor/` |
+| **Front (autonomous)** | `http://app.localhost/` (port 80, caddy → vite ; `cd ../app-supervision && npm run dev`) | deployed separately, e.g. `https://app.fap.example.com` (put its origin in `FRONT_ORIGINS`) |
 
-Login Keycloak (dev) : **alice / bob / admin**, mot de passe `dev`.
+Keycloak login (dev): **alice / bob / admin**, password `dev`.
 
-## Démarrer / arrêter
+## Start / stop
 
 ```bash
 cd app-supervision-backend
-./scripts/start.sh          # démarre le BACKEND (stack docker complète) + affiche les URLs
-./scripts/start.sh --reset  # idem en supprimant les volumes (re-seed complet, ex. après
-                            # changement de BASE_IRI/domaine)
-./scripts/stop.sh           # arrête le backend (docker compose down, volumes conservés)
+./scripts/start.sh          # starts the BACKEND (full docker stack) + prints the URLs
+./scripts/start.sh --reset  # same, deleting the volumes (full re-seed, e.g. after
+                            # changing BASE_IRI/domain)
+./scripts/stop.sh           # stops the backend (docker compose down, volumes kept)
 
-# Le FRONT est autonome, depuis son propre répertoire :
+# The FRONT is autonomous, from its own directory:
 cd ../app-supervision
-./scripts/configure.sh http://localhost   # écrit .env + orbit.json (POD_URL, OIDC_ISSUER…)
+./scripts/configure.sh http://localhost   # writes .env + orbit.json (POD_URL, OIDC_ISSUER…)
 npm run dev                               # → http://app.localhost/ (caddy :80 → vite)
 ```
 
-`start.sh` délègue à `deploy-local.sh` (idempotent : secrets auto, `.build/` rendu — flows,
-initdb, Caddyfile, realm Keycloak — compose up, pg_cron, boot fap-ldp, rejoue `sql/` custom,
-vérifs curl) et affiche les URLs du back + la commande pour lancer le front.
+`start.sh` delegates to `deploy-local.sh` (idempotent: auto secrets, rendered `.build/` — flows,
+initdb, Caddyfile, Keycloak realm — compose up, pg_cron, fap-ldp boot, replays `sql/` custom,
+curl checks) and prints the back URLs + the command to launch the front.
 
-## Schéma / certificat selon `ENV` (dans `.env`)
+## Scheme / certificate according to `ENV` (in `.env`)
 
-| `ENV` | `API_DOMAIN` | Schéma | Certificat |
+| `ENV` | `API_DOMAIN` | Scheme | Certificate |
 |---|---|---|---|
-| `dev` (défaut) | `localhost` | **`http://localhost/` :80 — HTTP pur** | aucun — aucune erreur navigateur en local |
-| `dev` spécial | domaine custom (ex. `api.localhost`) | `https://…` :443 | auto-signé interne (`tls internal`) — le login OIDC exige un contexte sécurisé hors `localhost` |
-| `staging` | domaine non public | `https://…` :443 | auto-signé interne (`tls internal`) — importer `.build/caddy-root.crt` dans le navigateur une fois |
-| `prod` | vrai domaine (A record → IP), ex. `fap.example.com` | `https://…` :443 | **Let's Encrypt** automatique |
+| `dev` (default) | `localhost` | **`http://localhost/` :80 — pure HTTP** | none — no browser error locally |
+| special `dev` | custom domain (e.g. `api.localhost`) | `https://…` :443 | internal self-signed (`tls internal`) — OIDC login requires a secure context outside `localhost` |
+| `staging` | non-public domain | `https://…` :443 | internal self-signed (`tls internal`) — import `.build/caddy-root.crt` into the browser once |
+| `prod` | real domain (A record → IP), e.g. `fap.example.com` | `https://…` :443 | **Let's Encrypt** automatic |
 
-`SCHEME`/`BASE_IRI` sont dérivés de `ENV` + `API_DOMAIN` par `deploy-local.sh` (écrits dans
-`.env`, utilisés pour le Caddyfile rendu `.build/Caddyfile`, le realm Keycloak, `FAP_LDP_BASE_IRI`,
-`KC_HOSTNAME` et les ACL `base_iri`). Changer `ENV` ou le domaine puis relancer
-`./scripts/start.sh --reset` re-rend et re-seed tout proprement.
+`SCHEME`/`BASE_IRI` are derived from `ENV` + `API_DOMAIN` by `deploy-local.sh` (written to
+`.env`, used for the rendered `.build/Caddyfile`, the Keycloak realm, `FAP_LDP_BASE_IRI`,
+`KC_HOSTNAME` and the `base_iri` ACLs). Changing `ENV` or the domain then rerunning
+`./scripts/start.sh --reset` re-renders and re-seeds everything cleanly.
 
-Le Caddyfile ne sert **que le back** : racine → LDP/ORCE (dont `POST /app/query`, proxy signé —
-atteint via la route racine, aucune route dédiée), `/auth/*` → Keycloak, `/dsp/*` et `/editor*`
-→ ORCE, plus le CORS pour `FRONT_ORIGINS` (`/auth/*` exclu : Keycloak gère déjà ses headers
-CORS via `webOrigins`).
+The Caddyfile serves **only the back**: root → LDP/ORCE (including `POST /app/query`, signed proxy —
+reached via the root route, no dedicated route), `/auth/*` → Keycloak, `/dsp/*` and `/editor*`
+→ ORCE, plus CORS for `FRONT_ORIGINS` (`/auth/*` excluded: Keycloak already manages its own
+CORS headers via `webOrigins`).
 
-Prérequis : docker + plugin compose (user-local accepté : `~/.docker/cli-plugins/docker-compose`),
-python3, openssl, envsubst — et les deux dépôts à côté de celui-ci (`../fap-light-serveur`,
-`../fap-ldp`). Toutes les images docker utilisées sont locales (aucun pull).
+Prerequisites: docker + compose plugin (user-local accepted: `~/.docker/cli-plugins/docker-compose`),
+python3, openssl, envsubst — and the two sibling repos (`../fap-light-serveur`,
+`../fap-ldp`). All docker images used are local (no pull).
 
-## Vérifier
+## Verify
 
 ```bash
 docker compose --project-name energy-supervision --env-file .env -f compose/docker-compose.yml ps
-curl -s http://localhost/                           # racine LDP (dev = HTTP pur, pas de -k)
-curl -s http://localhost/tickets/                   # conteneur app.* (401 sans session)
-curl -s -X POST http://localhost/dsp/catalogue/request   # catalogue DSP (assets gold publiés)
-# CORS (front autonome sur http://app.localhost/) :
+curl -s http://localhost/                           # LDP root (dev = pure HTTP, no -k)
+curl -s http://localhost/tickets/                   # app.* container (401 without a session)
+curl -s -X POST http://localhost/dsp/catalogue/request   # DSP catalog (published gold assets)
+# CORS (autonomous front on http://app.localhost/) :
 curl -s -D - -o /dev/null -H "Origin: http://app.localhost" http://localhost/buildings/ | grep -i access-control
 curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS http://localhost/app/query \
   -H "Origin: http://app.localhost" -H "Access-Control-Request-Method: POST"   # preflight → 204
-# token de test (password grant) :
+# test token (password grant) :
 TOKEN=$(curl -s http://localhost/auth/realms/fap-light/protocol/openid-connect/token \
   -d grant_type=password -d client_id=fap-light-ui -d username=alice -d password=dev -d scope=openid \
   | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
@@ -153,63 +153,63 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost/buildings/   # 200 JS
 curl -s -X POST http://localhost/app/query -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"assetId":"dataset:facis:net-grid-hourly","from":"2026-11-19T00:00:00Z","to":"2026-11-20T00:00:00Z"}'  # 200
-# tests de conformité : voir tck/README.md
+# conformance tests: see tck/README.md
 ```
 
-## Change requests serveur implémentés (spec `app-store-catalogue.md` §2)
+## Server change requests implemented (spec `app-store-catalogue.md` §2)
 
-| CR | Contenu | Où | Vérifié |
+| CR | Content | Where | Verified |
 |---|---|---|---|
-| **CR-0** | Toutes les matviews gold publiées en conteneurs LDP (13 assets `/gold/*/`) | `sql/106_cr0_cr1_gold_ldp.sql` | `GET /gold/net_grid_hourly/` etc. → 200 |
-| **CR-1** | Matviews `gold.price_hourly` + `gold.city_event_hourly` depuis `silver.energy_price`/`silver.city_event`, publiées LDP | `sql/106` + refresh pg_cron 10 min | 20 lignes chacune, `/gold/price_hourly/` → 200 |
-| **CR-2** | `area_m2 double precision` (nullable) sur `app.buildings` (+ lat/lon §13.4 déjà là) | `config/model.json` + `sql/105_cr2_area_m2.sql` | `PATCH app_buildings:area_m2` → 200, servi en lecture |
-| **CR-3** | Sous-conteneur LDP `/tickets/<pk>/versions/` (vue `app.ticket_versions` filtrée, RG-5) | `sql/107_cr3_ticket_versions.sql` | `GET /tickets/1/versions/` → 200 + membres |
-| **CR-4** | Matview `gold.annual_site_consumption` (kWh/an + kWh/m² par bâtiment), publiée `/gold/annual_site_consumption/` | `sql/108_cr4_annual_site_consumption.sql` | lignes présentes, conteneur → 200 |
-| **CR-5** | Endpoint `POST /app/llm` (fonction : session OIDC, rate limit 10/min/user, whitelist assets serveur, lecture **en LDP interne avec le token user** donc ACL/RLS, audit `dsp.audit`, appel LLM si `LLM_ENDPOINT` sinon 503) | `flows/app-supervision.json` + env `LLM_ENDPOINT`/`LLM_API_KEY`/`LLM_ASSETS` | 401/400/403/429/503 testés, audit OK |
+| **CR-0** | All gold matviews published as LDP containers (13 `/gold/*/` assets) | `sql/106_cr0_cr1_gold_ldp.sql` | `GET /gold/net_grid_hourly/` etc. → 200 |
+| **CR-1** | Matviews `gold.price_hourly` + `gold.city_event_hourly` from `silver.energy_price`/`silver.city_event`, published LDP | `sql/106` + pg_cron refresh 10 min | 20 rows each, `/gold/price_hourly/` → 200 |
+| **CR-2** | `area_m2 double precision` (nullable) on `app.buildings` (+ lat/lon §13.4 already there) | `config/model.json` + `sql/105_cr2_area_m2.sql` | `PATCH app_buildings:area_m2` → 200, served on read |
+| **CR-3** | LDP sub-container `/tickets/<pk>/versions/` (`app.ticket_versions` filtered view, RG-5) | `sql/107_cr3_ticket_versions.sql` | `GET /tickets/1/versions/` → 200 + members |
+| **CR-4** | Matview `gold.annual_site_consumption` (kWh/year + kWh/m² per building), published `/gold/annual_site_consumption/` | `sql/108_cr4_annual_site_consumption.sql` | rows present, container → 200 |
+| **CR-5** | Endpoint `POST /app/llm` (function: OIDC session, rate limit 10/min/user, server-side asset allowlist, read **via internal LDP with the user token** so ACL/RLS apply, audit `dsp.audit`, LLM call if `LLM_ENDPOINT` else 503) | `flows/app-supervision.json` + env `LLM_ENDPOINT`/`LLM_API_KEY`/`LLM_ASSETS` | 401/400/403/429/503 tested, audit OK |
 
-Note CR-5 : pas d'async dans les function nodes des flows HTTP (le runtime ORCE ne rend pas
-la main) → lecture des assets par split → http request (PEP interne) → join. Le PEP cache les
-colonnes au 1er accès : `deploy-local.sh` redémarre ORCE après le rejeu des migrations custom.
+Note CR-5: no async in the HTTP flow function nodes (the ORCE runtime does not return the
+main) → asset read via split → http request (internal PEP) → join. The PEP caches the
+columns on first access: `deploy-local.sh` restarts ORCE after replaying the custom migrations.
 
-## Patchs appliqués à `../fap-ldp` (composant, monté en lecture seule dans ORCE)
+## Patches applied to `../fap-ldp` (component, mounted read-only in ORCE)
 
-Trois change requests nécessaires au déploiement, dans `core/nodes/nodes/ldp-container.js` :
+Three change requests needed for the deployment, in `core/nodes/nodes/ldp-container.js`:
 
-1. **Exclusion `/app/` du middleware LDP** (C1.9/D-8) : le proxy `POST /app/query` doit atteindre
-   ORCE sans être intercepté par le conteneur LDP (le front, lui, est autonome et n'est plus servi
-   par ce back).
-2. **Décision K (CA-L15)** : `validateTransition()` lit les `business_rules` de `config/model.json`
-   et rejette toute transition de statut invalide par `409 dspace:Error invalid_transition`.
-3. **`ORDER BY t.<pk>` dynamique** dans la liste des conteneurs : les matviews gold n'ont pas de
-   colonne `id` ; la pk est le dernier placeholder du `resource_iri_pattern` de `dsp.asset_mapping`.
+1. **Exclusion of `/app/` from the LDP middleware** (C1.9/D-8): the `POST /app/query` proxy must reach
+   ORCE without being intercepted by the LDP container (the front, for its part, is autonomous and is no longer
+   served by this back).
+2. **Decision K (CA-L15)**: `validateTransition()` reads the `business_rules` of `config/model.json`
+   and rejects any invalid status transition with `409 dspace:Error invalid_transition`.
+3. **Dynamic `ORDER BY t.<pk>`** in the container listing: gold matviews have no `id`
+   column; the pk is the last placeholder of the `resource_iri_pattern` in `dsp.asset_mapping`.
 
-## Notes opérationnelles
+## Operational notes
 
-- **Front (autonome)** : aucune référence ici. Depuis `../app-supervision` :
+- **Front (autonomous)**: no reference here. From `../app-supervision`:
   `./scripts/configure.sh http://localhost && npm run dev` → **`http://app.localhost/`** (port 80).
-  Le client n'a AUCUN proxy vite : tous les appels partent en absolu vers `POD_URL`
-  (cross-origin, CORS géré par le back) — un proxy vite casserait le DPoP
-  (`DPoP HTTP URL mismatch`). Login Keycloak : **alice** (mdp `dev` en dev).
-  En staging/prod : `./scripts/configure.sh https://fap.example.com` et mettre l'origine
-  du front dans `FRONT_ORIGINS` (CORS + webOrigins Keycloak).
-- **Certificat** : en dev HTTP pur, aucun. En staging (HTTPS auto-signé) : importer une fois
-  `.build/caddy-root.crt` dans le navigateur (Paramètres → Certificats → Autorités → Importer).
-- **Éditeur Node-RED** : `http://localhost/editor/` en dev (httpAdminRoot `/editor`, hors
-  middleware LDP — copié au boot par `scripts/orce-entrypoint.sh` depuis `scripts/orce-settings.js`).
-  Les nœuds LDP sont dans l'onglet **FAP-LDP** (`fap-ldp-container` PEP, `fap-ldp-pdp`,
-  `fap-ldp-model` boot) ; notre proxy/outbox dans l'onglet **app-supervision**.
-- **PATCH** : envoyer `Content-Type: application/json` (le body-parser Node-RED ne lit pas
-  `application/merge-patch+json` en stream ; la sémantique merge-patch s'applique quand même,
-  la clé doit être préfixée comme servie, ex. `{"app_tickets:status":"IN_PROGRESS"}`).
-- Le token OIDC (password grant, tests) : `scope=openid` requis pour l'userinfo
-  (voir « Vérifier » ci-dessus ; mdp de démo = `DEMO_PASSWORD` dans `.env`, `dev` en dev).
-- Les migrations `sql/10x` sont rejouées automatiquement après le boot par `deploy-local.sh`
-  (elles ont besoin de `app.*`, créé au boot par le nœud `fap-ldp`).
+  The client has NO vite proxy: all calls go absolute to `POD_URL`
+  (cross-origin, CORS handled by the back) — a vite proxy would break DPoP
+  (`DPoP HTTP URL mismatch`). Keycloak login: **alice** (password `dev` in dev).
+  In staging/prod: `./scripts/configure.sh https://fap.example.com` and put the
+  front origin in `FRONT_ORIGINS` (CORS + Keycloak webOrigins).
+- **Certificate**: in pure HTTP dev, none. In staging (self-signed HTTPS): import once
+  `.build/caddy-root.crt` into the browser (Settings → Certificates → Authorities → Import).
+- **Node-RED editor**: `http://localhost/editor/` in dev (httpAdminRoot `/editor`, outside
+  the LDP middleware — copied at boot by `scripts/orce-entrypoint.sh` from `scripts/orce-settings.js`).
+  The LDP nodes are in the **FAP-LDP** palette (`fap-ldp-container` PEP, `fap-ldp-pdp`,
+  `fap-ldp-model` boot); our proxy/outbox in the **app-supervision** palette.
+- **PATCH**: send `Content-Type: application/json` (the Node-RED body-parser does not read
+  `application/merge-patch+json` in stream mode; merge-patch semantics still apply,
+  the key must be prefixed as served, e.g. `{"app_tickets:status":"IN_PROGRESS"}`).
+- OIDC token (password grant, tests): `scope=openid` required for userinfo
+  (see "Verify" above; demo password = `DEMO_PASSWORD` in `.env`, `dev` in dev).
+- The `sql/10x` migrations are automatically replayed after boot by `deploy-local.sh`
+  (they need `app.*`, created at boot by the `fap-ldp` node).
 
-## Références
+## References
 
-- `spec/supervision-energetique-spec-fonctionnelle.md` — périmètre F1–F7, modèle §4.1, RG-1..RG-6, CA-1..CA-5
-- `spec/fap-light-spec-serveur.md` — cœur FAP-light (C1.1–C1.9, D-1..D-8, CA-S1..CA-S10)
-- `spec/fap-ldp-spec.md` — extension FAP-LDP (E1–E3, décisions A–K, CA-L1..CA-L15)
-- `spec/fap-domaine-app-et-profils.md` — profil light retenu, règles de sécurité (rôles PG)
-- `spec/supervision-energetique-front-technique.md` — contrat client consommé (§9 proxy /app/query, §13.3 mapping assets, §13.5 workflow)
+- `spec/supervision-energetique-spec-fonctionnelle.md` — scope F1–F7, model §4.1, RG-1..RG-6, CA-1..CA-5
+- `spec/fap-light-spec-serveur.md` — FAP-light core (C1.1–C1.9, D-1..D-8, CA-S1..CA-S10)
+- `spec/fap-ldp-spec.md` — FAP-LDP extension (E1–E3, decisions A–K, CA-L1..CA-L15)
+- `spec/fap-domaine-app-et-profils.md` — retained light profile, security rules (PG roles)
+- `spec/supervision-energetique-front-technique.md` — consumed client contract (§9 proxy /app/query, §13.3 asset mapping, §13.5 workflow)

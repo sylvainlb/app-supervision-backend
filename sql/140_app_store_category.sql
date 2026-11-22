@@ -1,7 +1,7 @@
 -- ============================================================================
--- App store — catégorie (rayon) des features du catalogue (organisation du
--- <app-store> en sections + filtres). Copie de app-store/sql/021_features_category.sql.
--- Idempotent (ADD COLUMN IF NOT EXISTS + backfill sur NULL), rejoué au boot.
+-- App store — category (shelf) of the catalog features (organization of
+-- <app-store> into sections + filters). Copy of app-store/sql/021_features_category.sql.
+-- Idempotent (ADD COLUMN IF NOT EXISTS + backfill on NULL), replayed at boot.
 -- ============================================================================
 
 ALTER TABLE app.features ADD COLUMN IF NOT EXISTS category text;
@@ -24,6 +24,6 @@ UPDATE app.features SET category = 'compliance'
 
 UPDATE app.features SET category = 'tools'
   WHERE category IS NULL AND slug IN
-  ('ai-assistant', 'demo_meteo', 'admin', 'store');
+  ('ai-assistant', 'demo_weather', 'admin', 'store');
 
 CREATE INDEX IF NOT EXISTS features_category_idx ON app.features (category);

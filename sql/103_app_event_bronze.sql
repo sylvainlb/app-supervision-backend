@@ -1,11 +1,11 @@
 -- ============================================================================
--- 103_app_event_bronze.sql — retour vers la FAP des événements applicatifs (RG-3)
+-- 103_app_event_bronze.sql — feeding application events back to the FAP (RG-3)
 --
--- Le trigger app.outbox_trigger (posé par le nœud fap-ldp) écrit chaque
--- INSERT/UPDATE de app.* dans app.outbox ; le flow ORCE 'app-supervision'
--- (flows/app-supervision.json) consomme l'outbox et appelle
--- public.gate_ingest('app.event', payload, ...) avec le rôle gate.
--- Il faut donc : (1) la table bronze d'atterrissage, (2) l'entrée gate_type_map.
+-- The app.outbox_trigger trigger (set by the fap-ldp node) writes every
+-- INSERT/UPDATE of app.* into app.outbox ; the ORCE flow 'app-supervision'
+-- (flows/app-supervision.json) consumes the outbox and calls
+-- public.gate_ingest('app.event', payload, ...) with the gate role.
+-- Hence we need: (1) the bronze landing table, (2) the gate_type_map entry.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS bronze.app_event (

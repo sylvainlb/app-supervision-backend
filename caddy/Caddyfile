@@ -1,24 +1,24 @@
-# Caddyfile de RÉFÉRENCE (staging/prod) — le fichier réellement monté est .build/Caddyfile,
-# RENDU par scripts/deploy-local.sh selon ENV + API_DOMAIN/FRONT_ORIGINS dans .env :
-#   dev (défaut, API_DOMAIN=localhost) → HTTP pur :80, aucun certificat
-#   staging                            → HTTPS auto-signé interne (tls internal), CA locale
-#                                        .build/caddy-root.crt à importer dans le navigateur
-#   prod (ce fichier)                  → HTTPS Let's Encrypt automatique, vrai domaine :
+# REFERENCE Caddyfile (staging/prod) — the file actually mounted is .build/Caddyfile,
+# RENDERED by scripts/deploy-local.sh according to ENV + API_DOMAIN/FRONT_ORIGINS in .env :
+#   dev (default, API_DOMAIN=localhost) → pure HTTP :80, no certificate
+#   staging                            → internal self-signed HTTPS (tls internal), local CA
+#                                        .build/caddy-root.crt to import into the browser
+#   prod (this file)                  → automatic Let's Encrypt HTTPS, real domain:
 #                                        API_DOMAIN=fap.example.com (A record → IP)
 #
-# UN SEUL site : le BACK. Le front (../app-supervision) est AUTONOME (vite dans son propre
-# répertoire) et appelle le back en absolu, cross-origin → CORS ci-dessous (FRONT_ORIGINS).
+# ONE site only: the BACK. The front (../app-supervision) is AUTONOMOUS (vite in its own
+# directory) and calls the back in absolute, cross-origin → CORS below (FRONT_ORIGINS).
 :80 {
   redir https://{host}{uri} permanent
 }
 
 https://api.example.com {
-  # prod : pas de `tls internal` → Let's Encrypt. staging : remplacer par `tls internal`.
+  # prod: no `tls internal` → Let's Encrypt. staging: replace with `tls internal`.
 
-  # CORS pour le front autonome (remplacer par les vraies origines, ex. https://app.example.com)
+  # CORS for the autonomous front (replace with the real origins, e.g. https://app.example.com)
   @corsOrigin {
     header Origin https://app.example.com
-    not path /auth/*    # /auth/* : Keycloak répond déjà CORS (webOrigins) — pas de doublon
+    not path /auth/*    # /auth/*: Keycloak already answers CORS (webOrigins) — no duplicate
   }
   @preflight {
     method OPTIONS
@@ -35,21 +35,21 @@ https://api.example.com {
   header @corsOrigin Access-Control-Expose-Headers "Location, ETag, Link, Allow, WAC-Allow, Preference-Applied, Content-Location"
   header @corsOrigin Vary "Origin"
 
-  # IdP (Keycloak) — /auth/* → issuer https://<API_DOMAIN>/auth/realms/fap-light (spec front §13.6)
+  # IdP (Keycloak) — /auth/* → issuer https://<API_DOMAIN>/auth/realms/fap-light (front spec §13.6)
   handle /auth/* {
     uri strip_prefix /auth
     reverse_proxy keycloak:8080
   }
-  # Data plane DSP du cœur FAP (HMAC, serveur-à-serveur / consommateurs externes)
+  # DSP data plane of the FAP core (HMAC, server-to-server / external consumers)
   handle /dsp/* {
     reverse_proxy orce:1880
   }
-  # Éditeur Node-RED (admin)
+  # Node-RED editor (admin)
   handle /editor* {
     reverse_proxy orce:1880
   }
-  # Racine → endpoint LDP/JSON-LD (FAP-LDP) + flows cœur, dont POST /app/query (proxy signé,
-  # le nœud fap-ldp exclut /app/ du middleware LDP — patch C1.9/D-8)
+  # Root → LDP/JSON-LD endpoint (FAP-LDP) + core flows, including POST /app/query (signed proxy,
+  # the fap-ldp node excludes /app/ from the LDP middleware — patch C1.9/D-8)
   handle {
     reverse_proxy orce:1880
   }

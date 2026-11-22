@@ -8,7 +8,7 @@
   "clients": [
     {
       "clientId": "fap-light-ui",
-      "name": "Front app-supervision (Startin'blox) — pré-enregistré statiquement, décision I (pas de dynamic registration), spec front §13.6",
+      "name": "Front app-supervision (Startin'blox) — statically pre-registered, decision I (no dynamic registration), front spec §13.6",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -81,10 +81,10 @@
   "roles": {
     "realm": [
       {
-        "name": "gestionnaire"
+        "name": "manager"
       },
       {
-        "name": "technicien"
+        "name": "technician"
       },
       {
         "name": "admin"
@@ -97,17 +97,17 @@
       "enabled": true,
       "email": "alice@${DOMAIN}",
       "firstName": "Alice",
-      "lastName": "Gestionnaire",
+      "lastName": "Manager",
       "attributes": {
         "webid": [
           "${BASE_IRI}users/1"
         ],
         "role": [
-          "gestionnaire"
+          "manager"
         ]
       },
       "realmRoles": [
-        "gestionnaire"
+        "manager"
       ],
       "credentials": [
         {
@@ -122,17 +122,17 @@
       "enabled": true,
       "email": "bob@${DOMAIN}",
       "firstName": "Bob",
-      "lastName": "Technicien",
+      "lastName": "Technician",
       "attributes": {
         "webid": [
           "${BASE_IRI}users/2"
         ],
         "role": [
-          "technicien"
+          "technician"
         ]
       },
       "realmRoles": [
-        "technicien"
+        "technician"
       ],
       "credentials": [
         {
@@ -146,8 +146,8 @@
       "username": "admin",
       "enabled": true,
       "email": "admin@${DOMAIN}",
-      "firstName": "Admin",
-      "lastName": "Parc",
+      "firstName": "Fleet",
+      "lastName": "Admin",
       "attributes": {
         "webid": [
           "${BASE_IRI}users/3"

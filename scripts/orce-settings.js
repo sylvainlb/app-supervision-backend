@@ -1,8 +1,8 @@
-// Settings Node-RED du déploiement energy-supervision (copié sur /data/settings.js au boot).
-// Identique au settings du cœur FAP-light, avec httpAdminRoot '/editor' :
-// le middleware LDP (fap-ldp-container) sert la racine '/', il exclut '/editor' →
-// l'éditeur Node-RED est joignable sur https://<pod>/editor/ (voir caddy/Caddyfile).
-// functionExternalModules: true autorise les libs des function nodes (pg, crypto…).
+// Node-RED settings of the energy-supervision deployment (copied to /data/settings.js at boot).
+// Identical to the FAP-light core settings, with httpAdminRoot '/editor':
+// the LDP middleware (fap-ldp-container) serves the root '/', it excludes '/editor' →
+// the Node-RED editor is reachable on https://<pod>/editor/ (see caddy/Caddyfile).
+// functionExternalModules: true allows function node libs (pg, crypto…).
 module.exports = {
   flowFile: 'flows.json',
   userDir: '/data',

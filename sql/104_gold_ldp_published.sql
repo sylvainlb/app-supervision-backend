@@ -1,11 +1,11 @@
 -- ============================================================================
--- 104_gold_ldp_published.sql — conteneurs LDP publiés pour les agrégats gold
--- Mapping définitif spec front §13.3 : anomaly_candidates, city_dashboard_summary,
--- energy_cost_daily sont servis en LDP direct (publiés) ; net_grid_hourly et
--- pv_performance_hourly restent DSP-only (volume horaire) via le proxy /app/query.
+-- 104_gold_ldp_published.sql — published LDP containers for gold aggregates
+-- Final mapping front spec §13.3 : anomaly_candidates, city_dashboard_summary,
+-- energy_cost_daily are served as direct LDP (published) ; net_grid_hourly and
+-- pv_performance_hourly remain DSP-only (hourly volume) via the /app/query proxy.
 --
--- ⚠️ les matviews gold n'apparaissent pas dans information_schema.tables
---    (relkind='m') : le seed 007 du cœur ne les mappe pas → on les déclare ici.
+-- ⚠️ gold matviews do not appear in information_schema.tables
+--    (relkind='m') : the core seed 007 does not map them → we declare them here.
 -- ============================================================================
 
 INSERT INTO dsp.asset_mapping (asset_uri, container_uri, table_schema, table_name,
@@ -16,5 +16,5 @@ VALUES
   ('/gold/energy_cost_daily/',      '/gold/energy_cost_daily/',      'gold', 'energy_cost_daily',      '/gold/energy_cost_daily/<day>/<site_id>',              'day',             true)
 ON CONFLICT (asset_uri) DO UPDATE SET published = true;
 
--- le conteneur /gold/ est déjà en ACL read foaf:Agent (102_acl_init.sql) ;
--- la publication data space (catalogue DSP) reste gérée côté cœur (datasets.json).
+-- the /gold/ container is already in ACL read foaf:Agent (102_acl_init.sql) ;
+-- data space publication (DSP catalog) remains managed core-side (datasets.json).

@@ -1,24 +1,24 @@
 -- ============================================================================
--- 107_cr3_ticket_versions.sql — CR-3 (spec app-store-catalogue §2) :
---   exposition LDP des versions : sous-conteneur `/tickets/<pk>/versions/`.
+-- 107_cr3_ticket_versions.sql — CR-3 (app-store-catalogue spec §2) :
+--   LDP exposure of versions: sub-container `/tickets/<pk>/versions/`.
 --
--- app.versions (socle fap-ldp : table_name, row_id, version, data, changed_by,
--- changed_at) historise toutes les tables app.*. Pour le conteneur LDP des
--- tickets on expose une VUE filtrée table_name='tickets' (les autres tables
--- restent non publiées — RG-5), mappée comme `/tickets/*/versions/` (même
--- mécanisme que `/tickets/*/comments/`).
+-- app.versions (fap-ldp core: table_name, row_id, version, data, changed_by,
+-- changed_at) version-tracks all app.* tables. For the tickets LDP container
+-- we expose a FILTERED VIEW table_name='tickets' (the other tables
+-- remain unpublished — RG-5), mapped as `/tickets/*/versions/` (same
+-- mechanism as `/tickets/*/comments/`).
 --
--- ⚠️ Défensif (to_regclass) : rejoué post-boot par deploy-local.sh.
+-- ⚠️ Defensive (to_regclass): replayed post-boot by deploy-local.sh.
 -- ============================================================================
 
 DO $$
 BEGIN
   IF to_regclass('app.versions') IS NULL OR to_regclass('app.tickets') IS NULL THEN
-    RAISE NOTICE 'app.versions/app.tickets absent — 107 à rejouer après le 1er boot';
+    RAISE NOTICE 'app.versions/app.tickets missing — 107 to replay after the 1st boot';
     RETURN;
   END IF;
 
-  -- Vue filtrée : versions des tickets uniquement (RG-5 : pas de tables brutes app.* publiées)
+  -- Filtered view: ticket versions only (RG-5: no raw app.* tables published)
   EXECUTE $DDL$
     CREATE OR REPLACE VIEW app.ticket_versions AS
     SELECT id, row_id AS ticket_id, version, data, changed_by, changed_at
@@ -27,7 +27,7 @@ BEGIN
   $DDL$;
   EXECUTE 'GRANT SELECT ON app.ticket_versions TO reader, app';
 
-  -- Mapping LDP du sous-conteneur /tickets/<pk>/versions/ (dernier placeholder = pk)
+  -- LDP mapping of the /tickets/<pk>/versions/ sub-container (last placeholder = pk)
   INSERT INTO dsp.asset_mapping (asset_uri, container_uri, table_schema, table_name,
                                  resource_iri_pattern, time_column, published)
   VALUES ('/tickets/*/versions/', '/tickets/*/versions/', 'app', 'ticket_versions',

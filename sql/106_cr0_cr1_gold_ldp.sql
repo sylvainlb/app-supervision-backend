@@ -1,26 +1,26 @@
 -- ============================================================================
--- 106_cr0_cr1_gold_ldp.sql — CR-0 + CR-1 (spec app-store-catalogue §2)
+-- 106_cr0_cr1_gold_ldp.sql — CR-0 + CR-1 (app-store-catalogue spec §2)
 --
--- CR-0 : publier TOUTES les matviews gold en conteneurs LDP (décision LDP-only
---   v0.3, spec front §13.3 révisée) : net_grid_hourly, pv_performance_hourly,
+-- CR-0: publish ALL gold matviews as LDP containers (LDP-only
+--   decision v0.3, revised front spec §13.3): net_grid_hourly, pv_performance_hourly,
 --   weather_hourly, energy_balance_hourly, event_impact_daily,
---   streetlight_zone_hourly + les 3 déjà publiées + CR-1/CR-4 ci-dessous.
--- CR-1 : matviews gold `price_hourly` et `city_event_hourly` à partir des vues
---   silver réelles silver.energy_price / silver.city_event, publiées en
---   conteneurs LDP /gold/price_hourly/ et /gold/city_event_hourly/.
+--   streetlight_zone_hourly + the 3 already published + CR-1/CR-4 below.
+-- CR-1: gold matviews `price_hourly` and `city_event_hourly` from the real
+--   silver views silver.energy_price / silver.city_event, published as
+--   LDP containers /gold/price_hourly/ and /gold/city_event_hourly/.
 --
--- ⚠️ Défensif (to_regclass) : rejoué post-boot par deploy-local.sh.
---    Les matviews n'apparaissent pas dans information_schema.tables (relkind='m').
+-- ⚠️ Defensive (to_regclass): replayed post-boot by deploy-local.sh.
+--    Matviews do not appear in information_schema.tables (relkind='m').
 -- ============================================================================
 
 DO $$
 BEGIN
   IF to_regclass('silver.energy_price') IS NULL OR to_regclass('silver.city_event') IS NULL THEN
-    RAISE NOTICE 'vues silver absentes — 106 à rejouer après le 1er boot du cœur';
+    RAISE NOTICE 'silver views missing — 106 to replay after the 1st core boot';
     RETURN;
   END IF;
 
-  -- --- CR-1 : matviews gold depuis les vues silver réelles --------------------
+  -- --- CR-1: gold matviews from the real silver views -----------------------
   EXECUTE $DDL$
     CREATE MATERIALIZED VIEW IF NOT EXISTS gold.price_hourly AS
     SELECT date_trunc('hour', event_timestamp) AS hour,
@@ -39,9 +39,9 @@ BEGIN
     GROUP BY 1, 2
   $DDL$;
 
-  -- --- CR-0 : publication LDP de TOUTES les matviews gold --------------------
-  -- resource_iri_pattern : le DERNIER placeholder = pk utilisée par le ORDER BY
-  -- dynamique du PEP (patch fap-ldp #3, matviews sans colonne id).
+  -- --- CR-0: LDP publication of ALL gold matviews ----------------------------
+  -- resource_iri_pattern: the LAST placeholder = pk used by the
+  -- dynamic PEP ORDER BY (fap-ldp patch #3, matviews without an id column).
   INSERT INTO dsp.asset_mapping (asset_uri, container_uri, table_schema, table_name,
                                  resource_iri_pattern, time_column, published)
   VALUES
@@ -61,16 +61,16 @@ BEGIN
     table_schema = EXCLUDED.table_schema, table_name = EXCLUDED.table_name,
     resource_iri_pattern = EXCLUDED.resource_iri_pattern, time_column = EXCLUDED.time_column;
 
-  -- --- Droits reader/app sur toutes les matviews gold (PEP LDP + data plane) --
+  -- --- reader/app rights on all gold matviews (LDP PEP + data plane) --------
   EXECUTE 'GRANT SELECT ON gold.anomaly_candidates, gold.city_dashboard_summary, gold.energy_balance_hourly, gold.energy_cost_daily, gold.event_impact_daily, gold.intervention_anomaly_daily, gold.net_grid_hourly, gold.pv_performance_hourly, gold.streetlight_zone_hourly, gold.weather_hourly, gold.price_hourly, gold.city_event_hourly TO reader, app';
 
-  -- --- Refresh pg_cron des nouvelles matviews (avec le gold_refresh() cœur) ---
+  -- --- pg_cron refresh of the new matviews (with the core gold_refresh()) ---
   IF to_regclass('cron.job') IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'fap-app-gold-refresh-cr0cr1') THEN
       PERFORM cron.schedule('fap-app-gold-refresh-cr0cr1', '*/10 * * * *',
         'SELECT public.gold_refresh(); REFRESH MATERIALIZED VIEW gold.price_hourly; REFRESH MATERIALIZED VIEW gold.city_event_hourly;');
     END IF;
   ELSE
-    RAISE NOTICE 'pg_cron absent — refresh price_hourly/city_event_hourly à planifier après le 1er boot';
+    RAISE NOTICE 'pg_cron missing — refresh price_hourly/city_event_hourly to schedule after the 1st boot';
   END IF;
 END $$;

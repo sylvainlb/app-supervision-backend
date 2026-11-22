@@ -1,8 +1,8 @@
 #!/bin/sh
-# orce-entrypoint.sh — entrypoint ORCE du déploiement energy-supervision :
-# copie les flows assemblés (cœur + fap-ldp + app-supervision) sur /data/flows.json
-# (flowFile du settings.js bakiné dans l'image), puis délègue à l'entrypoint FAP-light.
+# orce-entrypoint.sh — ORCE entrypoint of the energy-supervision deployment:
+# copies the assembled flows (core + fap-ldp + app-supervision) to /data/flows.json
+# (flowFile of the settings.js baked into the image), then delegates to the FAP-light entrypoint.
 set -Eeuo pipefail
 cp /flows-app/flows.json /data/flows.json
-cp /flows-app/orce-settings.js /data/settings.js   # httpAdminRoot '/editor' (hors middleware LDP)
+cp /flows-app/orce-settings.js /data/settings.js   # httpAdminRoot '/editor' (outside the LDP middleware)
 exec /usr/local/bin/entrypoint-light.sh "$@"
