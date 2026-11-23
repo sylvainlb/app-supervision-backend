@@ -1,0 +1,114 @@
+/* FAP login theme — same design system as the front app (app-supervision/src/styles.css):
+   emerald brand #10b981, ink #0f172a, bg #f4f6f9, card #fff, border #e5eaf0, radius 14px. */
+
+:root {
+  --brand: #10b981;
+  --brand-light: #34d399;
+  --brand-dark: #059669;
+  --brand-deep: #047857;
+  --brand-soft: #d1fae5;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --bg: #f4f6f9;
+  --card: #ffffff;
+  --border: #e5eaf0;
+  --radius: 14px;
+  --shadow-lg: 0 4px 10px rgba(15, 23, 42, 0.07), 0 18px 44px rgba(15, 23, 42, 0.13);
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* stock theme rule is ".login-pf body { background: url(keycloak-bg.png) ... }" — override it */
+.login-pf body, body.login-pf-page {
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 340px at 85% -80px, rgba(52, 211, 153, 0.16), transparent 60%),
+    linear-gradient(180deg, #eef2f7 0%, var(--bg) 320px) !important;
+  background-attachment: fixed !important;
+  background-size: auto !important;
+}
+
+/* Brand block: small emerald "bolt" mark + realm display name */
+#kc-header-wrapper::before {
+  content: "";
+  display: inline-block;
+  width: 30px; height: 30px;
+  margin-right: 10px;
+  vertical-align: -8px;
+  border-radius: 9px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 2 4.5 13.5H11L10 22l8.5-11.5H13L13 2z'/%3E%3C/svg%3E") center/18px no-repeat,
+    linear-gradient(135deg, var(--brand-light), var(--brand-deep));
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+#kc-header-wrapper {
+  font-family: var(--font);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Card */
+.card-pf {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 34px 38px 28px;
+}
+#kc-page-title {
+  font-family: var(--font);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Labels + inputs */
+.pf-c-form__label-text, .control-label {
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--ink);
+}
+.pf-c-form-control, input[type="text"], input[type="password"] {
+  font-family: var(--font);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+}
+.pf-c-form-control:focus, input[type="text"]:focus, input[type="password"]:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+}
+
+/* Primary button */
+.pf-c-button.pf-m-primary, #kc-login {
+  font-family: var(--font);
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--brand-light), var(--brand-deep));
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+}
+.pf-c-button.pf-m-primary:hover, #kc-login:hover {
+  background: var(--brand-dark);
+  color: #fff;
+}
+.pf-c-button.pf-m-primary:focus, #kc-login:focus {
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  color: #fff;
+}
+
+/* Links */
+a { color: var(--brand-dark); }
+a:hover { color: var(--brand-deep); }
+
+/* Alerts (errors etc.) */
+.pf-c-alert.pf-m-inline.pf-m-danger {
+  border-radius: 10px;
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+/* "Remember me" checkbox accent */
+input[type="checkbox"] { accent-color: var(--brand); }

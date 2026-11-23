@@ -138,6 +138,8 @@ services:
       - "${KEYCLOAK_PORT:-8080}:8080"
     volumes:
       - ../.build/keycloak:/opt/keycloak/data/import:ro
+      # custom login theme "fap" (keycloak/themes/fap, selected by realm loginTheme)
+      - ../keycloak/themes:/opt/keycloak/themes:ro
 
   # ---------------------------------------------------------- caddy (TLS frontal)
   caddy:
