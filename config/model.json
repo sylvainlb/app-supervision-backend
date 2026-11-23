@@ -66,6 +66,43 @@
     "text": "text not null",
     "ts": "timestamptz default now()"
    }
+  },
+  "components": {
+   "pk": "slug",
+   "owner": null,
+   "published": false,
+   "tombstone": "deleted_at",
+   "$comment": "Chantier 3 (app-ui-editor, app-store-spec v0.6 §1.4.3) — declarative stage of the app store: published component documents as LDP resources in /components/ (envelope { slug, sri, document }). Read: any authenticated pod user (ACL seed 142); write: admin (publication POST /components/). published=false → served over LDP to pod members, not exposed in the external data space (same regime as /features/). id = internal key for app.versions; the exposed IRI is the slug (/components/<slug>).",
+   "fields": {
+    "id": "bigserial (internal key for app.versions/outbox; NOT the exposed key)",
+    "slug": "text unique not null (exposed IRI key: /components/<slug>)",
+    "sri": "text not null (sha384 of the canonical document, @id excluded — J8)",
+    "document": "jsonb not null (the JSON-LD component document; the runtime unwraps `document`)",
+    "created_at": "timestamptz default now()",
+    "updated_at": "timestamptz default now()",
+    "deleted_at": "timestamptz"
+   }
+  },
+  "ai_models": {
+   "pk": "name",
+   "owner": null,
+   "published": false,
+   "tombstone": "deleted_at",
+   "$comment": "Chantier 5 (pile IA, spec ch.4/5 annexe B) — local model registry, container /ai_models/, one resource per model. Read: any authenticated user (profiles pick a model); write: admin. NO credential (F1.4): endpoint/model_id only; secrets live in the ORCE service env. `name` is the exact value of cmp:model (e.g. ollama://mistral-small).",
+   "fields": {
+    "id": "bigserial (internal key for app.versions/outbox; NOT the exposed key)",
+    "name": "text unique not null (exposed IRI key: /ai_models/<name>; value of cmp:model)",
+    "protocol": "text not null default 'openai_chat' check in ('openai_chat')",
+    "endpoint": "text not null (base URI, no credential)",
+    "model_id": "text not null (model id on the endpoint side)",
+    "location": "text not null check in ('local','remote')",
+    "context_window": "int",
+    "native_structured_output": "boolean",
+    "jurisdiction": "text (hosting/localization metadata, sovereignty)",
+    "created_at": "timestamptz default now()",
+    "updated_at": "timestamptz default now()",
+    "deleted_at": "timestamptz"
+   }
   }
  },
  "business_rules": [
