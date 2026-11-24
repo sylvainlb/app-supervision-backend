@@ -110,6 +110,8 @@ services:
       - ../../fap-ldp/core/nodes:/data/node_modules/node-red-contrib-fap-ldp:ro
       # E11 model-injection ext (fap-ldp-mi-boot / fap-ldp-mi-admin nodes, v2 app store)
       - ../../fap-ldp/ext/model-injection:/data/node_modules/node-red-contrib-fap-ldp-model-injection:ro
+      # E5 shacl ext (fap-ldp-shacl-serve / fap-ldp-shacl-boot nodes, published contracts)
+      - ../../fap-ldp/ext/shacl:/data/node_modules/node-red-contrib-fap-ldp-shacl:ro
       # core DSP catalog (datasets.json)
       - ../../fap-light-serveur/deploy/orce/data/dsp-config:/data/dsp-config:ro
     depends_on:

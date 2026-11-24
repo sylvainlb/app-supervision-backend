@@ -16,13 +16,15 @@ CORE_FLOWS="$CORE_DIR/deploy/orce/data/flows.json"
 mkdir -p "$(dirname "$OUT")"
 MI_FLOWS="$LDP_DIR/ext/model-injection/compose/flows/model-injection.json"
 [ -f "$MI_FLOWS" ] || { echo "ERROR: model-injection fragment not found ($MI_FLOWS)" >&2; exit 1; }
-python3 - "$CORE_FLOWS" "$LDP_DIR/compose/flows/fap-ldp.json" "$MI_FLOWS" "$HERE/flows/app-supervision.json" "$OUT" <<'PYEOF'
+SHACL_FLOWS="$LDP_DIR/ext/shacl/compose/flows/shacl.json"
+[ -f "$SHACL_FLOWS" ] || { echo "ERROR: shacl fragment not found ($SHACL_FLOWS)" >&2; exit 1; }
+python3 - "$CORE_FLOWS" "$LDP_DIR/compose/flows/fap-ldp.json" "$MI_FLOWS" "$SHACL_FLOWS" "$HERE/flows/app-supervision.json" "$OUT" <<'PYEOF'
 import json, sys
 flows = []
-for path in sys.argv[1:5]:
+for path in sys.argv[1:6]:
     with open(path) as f:
         flows.extend(json.load(f))
-with open(sys.argv[5], 'w') as f:
+with open(sys.argv[6], "w") as f:
     json.dump(flows, f, indent=1, ensure_ascii=False)
-print(f"flows.json assembled: {sys.argv[5]} ({len(flows)} nodes = core + fap-ldp + model-injection + app-supervision)")
+print(f"flows.json assembled: {sys.argv[6]} ({len(flows)} nodes = core + fap-ldp + model-injection + shacl + app-supervision)")
 PYEOF
