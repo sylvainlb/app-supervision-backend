@@ -1,115 +1,176 @@
 {
- "$comment": "Business model of the 'energy supervision' deployment (spec supervision-energetique-spec-fonctionnelle.md §4.1, RG-1/RG-2). Applied at boot by the fap-ldp node: app.* tables, triggers (updated_at, versioning, tombstone, outbox), FORCE RLS + auth.can() policies, dsp.asset_mapping, initial ACLs. Base: fap-ldp/examples/supervision/model.json + change requests front spec §13.4 (lat/lon WGS84 on buildings) and §13.5 (priority LOW|MEDIUM|HIGH|CRITICAL default MEDIUM) + fap-ldp spec v0.4 decision K (business_rules ticket_status_workflow, 409 invalid_transition rejection, CA-L15). Field dialect = model.js node parser: '<type> fk <table>(<col>)', '<type> check in (...)', comment in parentheses at the END of the string (nothing after). RG-1 (a ticket is always attached to a building): building_id as FK, also enforced PEP-side.",
- "base_iri": "https://<pod>/",
- "tables": {
-  "users": {
-   "pk": "id",
-   "owner": null,
-   "published": false,
-   "fields": {
-    "id": "bigserial",
-    "webid": "text unique not null",
-    "name": "text not null",
-    "email": "text unique",
-    "role": "text check in ('manager','technician','admin')",
-    "created_at": "timestamptz default now()",
-    "updated_at": "timestamptz default now()"
-   }
-  },
-  "buildings": {
-   "pk": "id",
-   "owner": null,
-   "published": true,
-   "fields": {
-    "id": "bigserial",
-    "name": "text not null",
-    "address": "text",
-    "meter_id": "text",
-    "facis_asset": "text",
-    "lat": "double precision",
-    "lon": "double precision",
-    "area_m2": "double precision",
-    "created_at": "timestamptz default now()",
-    "updated_at": "timestamptz default now()"
-   }
-  },
-  "tickets": {
-   "pk": "id",
-   "owner": "created_by",
-   "published": false,
-   "tombstone": "deleted_at",
-   "fields": {
-    "id": "bigserial",
-    "title": "text not null",
-    "description": "text",
-    "status": "text default 'OPEN' check in ('OPEN','IN_PROGRESS','RESOLVED','CLOSED')",
-    "priority": "text default 'MEDIUM' check in ('LOW','MEDIUM','HIGH','CRITICAL')",
-    "building_id": "bigint fk buildings(id)",
-    "anomaly_ref": "text",
-    "created_by": "bigint fk users(id)",
-    "assigned_to": "bigint fk users(id)",
-    "created_at": "timestamptz default now()",
-    "updated_at": "timestamptz default now()",
-    "deleted_at": "timestamptz"
-   }
-  },
-  "comments": {
-   "pk": "id",
-   "owner": "author",
-   "published": false,
-   "parent": "tickets",
-   "parent_fk": "ticket_id",
-   "fields": {
-    "id": "bigserial",
-    "ticket_id": "bigint fk tickets(id)",
-    "author": "bigint fk users(id)",
-    "text": "text not null",
-    "ts": "timestamptz default now()"
-   }
-  }
- },
- "business_rules": [
-  {
-   "name": "ticket_status_workflow",
-   "table": "tickets",
-   "field": "status",
-   "doc": "RG-2 + front spec 13.5 + decision K (CA-L15): invalid transition → 409 dspace:Error invalid_transition. 'assigned_to' = user assigned to the ticket.",
-   "on_create": {
-    "OPEN": [
-     "manager"
-    ]
-   },
-   "transitions": {
-    "OPEN": {
-     "IN_PROGRESS": [
-      "manager",
-      "assigned_to"
-     ]
+  "$comment": "Business model of the 'energy supervision' deployment (spec supervision-energetique-spec-fonctionnelle.md §4.1, RG-1/RG-2). Applied at boot by the fap-ldp node: app.* tables, triggers (updated_at, versioning, tombstone, outbox), FORCE RLS + auth.can() policies, dsp.asset_mapping, initial ACLs. Base: fap-ldp/examples/supervision/model.json + change requests front spec §13.4 (lat/lon WGS84 on buildings) and §13.5 (priority LOW|MEDIUM|HIGH|CRITICAL default MEDIUM) + fap-ldp spec v0.4 decision K (business_rules ticket_status_workflow, 409 invalid_transition rejection, CA-L15). Field dialect = model.js node parser: '<type> fk <table>(<col>)', '<type> check in (...)', comment in parentheses at the END of the string (nothing after). RG-1 (a ticket is always attached to a building): building_id as FK, also enforced PEP-side.",
+  "base_iri": "https://<pod>/",
+  "tables": {
+    "users": {
+      "pk": "id",
+      "owner": null,
+      "published": false,
+      "fields": {
+        "id": "bigserial",
+        "webid": "text unique not null",
+        "name": "text not null",
+        "email": "text unique",
+        "role": "text check in ('manager','technician','admin')",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()"
+      },
+      "label_i18n": {
+        "en": "Users",
+        "fr": "Utilisateurs"
+      }
     },
-    "IN_PROGRESS": {
-     "RESOLVED": [
-      "manager",
-      "assigned_to"
-     ]
+    "buildings": {
+      "pk": "id",
+      "owner": null,
+      "published": true,
+      "fields": {
+        "id": "bigserial",
+        "name": "text not null",
+        "address": "text",
+        "meter_id": "text",
+        "facis_asset": "text",
+        "lat": "double precision",
+        "lon": "double precision",
+        "area_m2": "double precision",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()"
+      },
+      "label_i18n": {
+        "en": "Buildings",
+        "fr": "Bâtiments"
+      }
     },
-    "RESOLVED": {
-     "CLOSED": [
-      "manager"
-     ],
-     "IN_PROGRESS": [
-      "manager"
-     ]
+    "tickets": {
+      "pk": "id",
+      "owner": "created_by",
+      "published": true,
+      "tombstone": "deleted_at",
+      "fields": {
+        "id": "bigserial",
+        "title": "text not null",
+        "description": "text",
+        "status": "text default 'OPEN' check in ('OPEN','IN_PROGRESS','RESOLVED','CLOSED')",
+        "priority": "text default 'MEDIUM' check in ('LOW','MEDIUM','HIGH','CRITICAL')",
+        "building_id": "bigint fk buildings(id)",
+        "anomaly_ref": "text",
+        "created_by": "bigint fk users(id)",
+        "assigned_to": "bigint fk users(id)",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()",
+        "deleted_at": "timestamptz"
+      },
+      "label_i18n": {
+        "en": "Tickets",
+        "fr": "Tickets"
+      }
     },
-    "CLOSED": {
-     "OPEN": [
-      "manager"
-     ]
+    "comments": {
+      "pk": "id",
+      "owner": "author",
+      "published": false,
+      "parent": "tickets",
+      "parent_fk": "ticket_id",
+      "fields": {
+        "id": "bigserial",
+        "ticket_id": "bigint fk tickets(id)",
+        "author": "bigint fk users(id)",
+        "text": "text not null",
+        "ts": "timestamptz default now()"
+      },
+      "label_i18n": {
+        "en": "Comments",
+        "fr": "Commentaires"
+      }
+    },
+    "components": {
+      "pk": "slug",
+      "owner": null,
+      "published": false,
+      "tombstone": "deleted_at",
+      "$comment": "Chantier 3 (app-ui-editor, app-store-spec v0.6 §1.4.3) — declarative stage of the app store: published component documents as LDP resources in /components/ (envelope { slug, sri, document }). Read: any authenticated pod user (ACL seed 142); write: admin (publication POST /components/). published=false → served over LDP to pod members, not exposed in the external data space (same regime as /features/). id = internal key for app.versions; the exposed IRI is the slug (/components/<slug>).",
+      "fields": {
+        "id": "bigserial (internal key for app.versions/outbox; NOT the exposed key)",
+        "slug": "text unique not null (exposed IRI key: /components/<slug>)",
+        "sri": "text not null (sha384 of the canonical document, @id excluded — J8)",
+        "document": "jsonb not null (the JSON-LD component document; the runtime unwraps `document`)",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()",
+        "deleted_at": "timestamptz"
+      },
+      "label_i18n": {
+        "en": "Components",
+        "fr": "Composants"
+      }
+    },
+    "ai_models": {
+      "pk": "name",
+      "owner": null,
+      "published": false,
+      "tombstone": "deleted_at",
+      "$comment": "Chantier 5 (pile IA, spec ch.4/5 annexe B) — local model registry, container /ai_models/, one resource per model. Read: any authenticated user (profiles pick a model); write: admin. NO credential (F1.4): endpoint/model_id only; secrets live in the ORCE service env. `name` is the exact value of cmp:model (e.g. ollama://mistral-small).",
+      "fields": {
+        "id": "bigserial (internal key for app.versions/outbox; NOT the exposed key)",
+        "name": "text unique not null (exposed IRI key: /ai_models/<name>; value of cmp:model)",
+        "protocol": "text not null default 'openai_chat' check in ('openai_chat')",
+        "endpoint": "text not null (base URI, no credential)",
+        "model_id": "text not null (model id on the endpoint side)",
+        "location": "text not null check in ('local','remote')",
+        "context_window": "int",
+        "native_structured_output": "boolean",
+        "jurisdiction": "text (hosting/localization metadata, sovereignty)",
+        "created_at": "timestamptz default now()",
+        "updated_at": "timestamptz default now()",
+        "deleted_at": "timestamptz"
+      },
+      "label_i18n": {
+        "en": "AI models",
+        "fr": "Modèles IA"
+      }
     }
-   },
-   "reject": {
-    "http": 409,
-    "code": "invalid_transition"
-   }
-  }
- ]
+  },
+  "business_rules": [
+    {
+      "name": "ticket_status_workflow",
+      "table": "tickets",
+      "field": "status",
+      "doc": "RG-2 + front spec 13.5 + decision K (CA-L15): invalid transition → 409 dspace:Error invalid_transition. 'assigned_to' = user assigned to the ticket.",
+      "on_create": {
+        "OPEN": [
+          "manager"
+        ]
+      },
+      "transitions": {
+        "OPEN": {
+          "IN_PROGRESS": [
+            "manager",
+            "assigned_to"
+          ]
+        },
+        "IN_PROGRESS": {
+          "RESOLVED": [
+            "manager",
+            "assigned_to"
+          ]
+        },
+        "RESOLVED": {
+          "CLOSED": [
+            "manager"
+          ],
+          "IN_PROGRESS": [
+            "manager"
+          ]
+        },
+        "CLOSED": {
+          "OPEN": [
+            "manager"
+          ]
+        }
+      },
+      "reject": {
+        "http": 409,
+        "code": "invalid_transition"
+      }
+    }
+  ]
 }

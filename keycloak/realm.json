@@ -1,6 +1,8 @@
 {
   "realm": "fap-light",
   "enabled": true,
+  "displayName": "FAP · Energy supervision",
+  "loginTheme": "fap",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
