@@ -201,7 +201,7 @@ CORS_ROUTES="  # CORS: the autonomous front (FRONT_ORIGINS, e.g. vite http://loc
   header @corsOrigin Access-Control-Allow-Origin \"{http.request.header.Origin}\"
   header @corsOrigin Access-Control-Allow-Credentials \"true\"
   header @corsOrigin Access-Control-Allow-Methods \"GET, POST, PUT, PATCH, DELETE, OPTIONS\"
-  # cache-control/pragma : sibStore / solid-client-authn les envoient en lecture.
+  # cache-control/pragma: sibStore / solid-client-authn send them on read.
   header @corsOrigin Access-Control-Allow-Headers \"Authorization, DPoP, Content-Type, Accept, Origin, Cache-Control, Pragma, If-Match, If-None-Match, Slug, Link\"
   header @corsOrigin Access-Control-Expose-Headers \"Location, ETag, Link, Allow, WAC-Allow, Preference-Applied, Content-Location\"
   header @corsOrigin Vary \"Origin\""
@@ -283,9 +283,9 @@ done
 # safeguard: the loaded flows must be the assembled flows (core + fap-ldp + custom)
 # → hash comparison (the node count is not enough after a func edit)
 n="$(dc exec -T orce md5sum /data/flows.json 2>/dev/null | cut -d' ' -f1)"
-attendu="$(md5sum "$BUILD/flows.json" | cut -d' ' -f1)"
-if [ "$n" != "$attendu" ]; then
-  log "flows not up to date in orce (md5 $n != $attendu) — copying + restart"
+expected="$(md5sum "$BUILD/flows.json" | cut -d' ' -f1)"
+if [ "$n" != "$expected" ]; then
+  log "flows not up to date in orce (md5 $n != $expected) — copying + restart"
   dc exec -T orce cp /flows-app/flows.json /data/flows.json
   dc restart orce >/dev/null
   for i in $(seq 1 30); do

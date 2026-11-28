@@ -1,8 +1,8 @@
 -- ============================================================================
--- App store — v0.5 two-stage discriminant (chantier 3, ratified J8).
--- Copie de app-store/sql/022_features_stage.sql (source : app-store/spec).
--- Idempotent (ADD COLUMN IF NOT EXISTS), rejoué au boot.
--- Additif uniquement : les lignes existantes gardent stage='code' (CA-A8).
+-- App store — v0.5 two-stage discriminant (workstream 3, ratified J8).
+-- Copy of app-store/sql/022_features_stage.sql (source: app-store/spec).
+-- Idempotent (ADD COLUMN IF NOT EXISTS), replayed at boot.
+-- Additive only: existing rows keep stage='code' (CA-A8).
 -- ============================================================================
 
 ALTER TABLE app.features ADD COLUMN IF NOT EXISTS stage text NOT NULL DEFAULT 'code'

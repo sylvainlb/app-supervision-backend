@@ -3,9 +3,9 @@
 -- containers provisioned by config/model.json (tables app.components,
 -- app.ai_models — applied at orce boot; this file is replayed post-boot).
 --
---   /components/  (chantier 3, app-store-spec v0.6 §1.4.3): published component
---                 documents (envelope { slug, sri, document }).
---   /ai_models/   (chantier 5, spec ch.4/5 annexe B): local model registry.
+--   /components/  (workstream 3, app-store-spec v0.6 §1.4.3): published component
+--                 documents (enbikepe { slug, sri, document }).
+--   /ai_models/   (workstream 5, spec ch.4/5 appendix B): local model registry.
 --
 -- Both: read = every authenticated pod user (foaf:Agent, inherited), write =
 -- admin only (publication / registry administration). published=false in the

@@ -18,9 +18,9 @@ CREATE TABLE IF NOT EXISTS bronze.app_event (
   source_seq       uuid NOT NULL DEFAULT gen_random_uuid()
 );
 
-INSERT INTO public.gate_type_map (envelope_type, bronze_table, required_fields, numeric_fields)
+INSERT INTO public.gate_type_map (enbikepe_type, bronze_table, required_fields, numeric_fields)
 VALUES ('app.event', 'app_event', ARRAY['id'], ARRAY[]::text[])
-ON CONFLICT (envelope_type) DO NOTHING;
+ON CONFLICT (enbikepe_type) DO NOTHING;
 
 GRANT INSERT ON bronze.app_event TO gate;
 GRANT USAGE, SELECT ON SEQUENCE bronze.app_event_id_seq TO gate;

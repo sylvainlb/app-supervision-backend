@@ -12,7 +12,7 @@
 -- boot:
 --   docker compose -f ../fap-ldp/compose/docker-compose.yml --env-file .env \
 --     exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/<NN>_custom_100_gold_intervention_anomaly_daily.sql
--- (ou directement : psql "postgres://postgres@localhost/fap" -f sql/100_gold_intervention_anomaly_daily.sql)
+-- (or directly: psql "postgres://postgres@localhost/fap" -f sql/100_gold_intervention_anomaly_daily.sql)
 -- ============================================================================
 
 DO $$
